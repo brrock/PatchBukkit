@@ -941,13 +941,25 @@ public class PatchBukkitServer implements Server {
     public static void registerPlayer(String uuidStr, String name, boolean isOp, int entityId) {
         try {
             UUID uuid = UUID.fromString(uuidStr);
+            if (!(org.bukkit.Bukkit.getServer() instanceof PatchBukkitServer server)) {
+                return;
+            }
+            // Login and join both register the player; keep the instance from login so state
+            // plugins attached to it there (e.g. an injected Permissible) carries over to join.
+            if (server.onlinePlayers.get(uuid) instanceof PatchBukkitPlayer existing && existing.getName().equals(name)) {
+                if (entityId > 0) {
+                    existing.setEntityId(entityId);
+                }
+                if (isOp) {
+                    existing.setOp(true);
+                }
+                return;
+            }
             PatchBukkitPlayer player = new org.patchbukkit.entity.CraftPlayer(uuid, name, entityId);
             if (isOp) {
                 player.setOp(true);
             }
-            if (org.bukkit.Bukkit.getServer() instanceof PatchBukkitServer server) {
-                server.registerPlayer(player);
-            }
+            server.registerPlayer(player);
         } catch (Throwable t) {
             logger.log(Level.SEVERE, "Failed to register player: " + name, t);
         }

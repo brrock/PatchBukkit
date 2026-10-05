@@ -2716,6 +2716,13 @@ impl PatchBukkitEvent
         }
     }
 
+    fn apply_modifications(&mut self, _server: &Arc<Server>, data: Data) -> Option<()> {
+        if let Data::AsyncPlayerPreLogin(event) = data {
+            self.kick_message = serde_json::from_str(&event.kick_message).ok()?;
+        }
+        Some(())
+    }
+
     fn set_cancelled(&mut self, cancelled: bool) {
         pumpkin::plugin::Cancellable::set_cancelled(self, cancelled);
     }
@@ -3897,6 +3904,13 @@ impl PatchBukkitEvent for pumpkin::plugin::player::player_login::PlayerLoginEven
                 player: Some(self.player.clone()),
             },
         }
+    }
+
+    fn apply_modifications(&mut self, _server: &Arc<Server>, data: Data) -> Option<()> {
+        if let Data::PlayerLogin(event) = data {
+            self.kick_message = serde_json::from_str(&event.kick_message).ok()?;
+        }
+        Some(())
     }
 
     fn set_cancelled(&mut self, cancelled: bool) {

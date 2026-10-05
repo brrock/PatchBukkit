@@ -31,7 +31,7 @@ impl EventManager {
         plugin_name: String,
     ) -> Result<FireEventResponse> {
         if let Some(ref event) = payload.event.data
-            && matches!(event, Data::PlayerJoin(_))
+            && matches!(event, Data::PlayerLogin(_) | Data::PlayerJoin(_))
             && let Some(ref player) = payload.context.player
         {
             Self::register_player(env, player, &payload.context.server)?;

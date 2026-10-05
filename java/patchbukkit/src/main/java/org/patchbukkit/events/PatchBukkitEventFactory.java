@@ -532,7 +532,12 @@ public class PatchBukkitEventFactory {
             }
             case ASYNC_PLAYER_PRE_LOGIN -> {
                 var ev = event.getAsyncPlayerPreLogin();
-                yield createGenericBukkitEvent("org.bukkit.event.player.AsyncPlayerPreLoginEvent", ev);
+                java.util.UUID uuid = java.util.UUID.fromString(ev.getPlayerUuid().getValue());
+                java.net.InetAddress address = parseSocketAddress(ev.getIpAddress());
+                yield new org.bukkit.event.player.AsyncPlayerPreLoginEvent(
+                    ev.getPlayerName(), address, address, uuid, false,
+                    Bukkit.createProfile(uuid, ev.getPlayerName())
+                );
             }
             case BEDROCK_FORM_RESPONSE -> null;
             case PLAYER_CHANGED_MAIN_HAND -> {
@@ -741,7 +746,11 @@ public class PatchBukkitEventFactory {
             }
             case PLAYER_LOGIN -> {
                 var ev = event.getPlayerLogin();
-                yield createGenericBukkitEvent("org.bukkit.event.player.PlayerLoginEvent", ev);
+                Player player = getPlayer(ev.getPlayerUuid().getValue());
+                if (player == null) yield null;
+                java.net.InetSocketAddress socketAddress = player.getAddress();
+                java.net.InetAddress address = socketAddress != null ? socketAddress.getAddress() : null;
+                yield new org.bukkit.event.player.PlayerLoginEvent(player, "", address, address);
             }
             case PLAYER_MOVE -> {
                 var ev = event.getPlayerMove();
@@ -1212,6 +1221,26 @@ public class PatchBukkitEventFactory {
     @NotNull
     public static byte[] toFireEventResponse(@NotNull org.bukkit.event.Event event) {
         try {
+            // Login events are denied through their result rather than Cancellable; the kick
+            // message goes back as JSON text so Pumpkin can show it on disconnect.
+            if (event instanceof org.bukkit.event.player.AsyncPlayerPreLoginEvent preLogin) {
+                boolean denied = preLogin.getLoginResult() != org.bukkit.event.player.AsyncPlayerPreLoginEvent.Result.ALLOWED;
+                return FireEventResponse.newBuilder()
+                    .setCancelled(denied)
+                    .setData(Event.newBuilder().setAsyncPlayerPreLogin(AsyncPlayerPreLoginEvent.newBuilder()
+                        .setKickMessage(GsonComponentSerializer.gson().serialize(preLogin.kickMessage()))))
+                    .build()
+                    .toByteArray();
+            }
+            if (event instanceof org.bukkit.event.player.PlayerLoginEvent login) {
+                boolean denied = login.getResult() != org.bukkit.event.player.PlayerLoginEvent.Result.ALLOWED;
+                return FireEventResponse.newBuilder()
+                    .setCancelled(denied)
+                    .setData(Event.newBuilder().setPlayerLogin(PlayerLoginEvent.newBuilder()
+                        .setKickMessage(GsonComponentSerializer.gson().serialize(login.kickMessage()))))
+                    .build()
+                    .toByteArray();
+            }
             boolean cancelled = event instanceof org.bukkit.event.Cancellable c && c.isCancelled();
             return FireEventResponse.newBuilder()
                 .setCancelled(cancelled)
@@ -1307,6 +1336,23 @@ public class PatchBukkitEventFactory {
             } catch (Throwable ignored) {}
         }
         return null;
+    }
+
+    /** Parses the host part of a Rust {@code SocketAddr} string such as {@code 127.0.0.1:5000} or {@code [::1]:5000}. */
+    @Nullable
+    private static java.net.InetAddress parseSocketAddress(@NotNull String socketAddress) {
+        String host = socketAddress;
+        if (host.startsWith("[")) {
+            int end = host.indexOf(']');
+            host = end > 0 ? host.substring(1, end) : host;
+        } else if (host.indexOf(':') == host.lastIndexOf(':') && host.indexOf(':') >= 0) {
+            host = host.substring(0, host.indexOf(':'));
+        }
+        try {
+            return java.net.InetAddress.getByName(host);
+        } catch (java.net.UnknownHostException e) {
+            return null;
+        }
     }
 
     @Nullable
