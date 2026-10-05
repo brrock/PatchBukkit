@@ -131,28 +131,22 @@ public class PatchBukkitHumanEntity
 
     @Override
     public boolean isOp() {
-        if (this.op) {
-            return true;
+        // Pumpkin owns operator status (/op, /deop, permission level), so read it live like
+        // CraftPlayer reads the ops list, and recalculate permissions when it changed.
+        boolean current;
+        try {
+            var resp = NativeBridgeFfi.isOp(BridgeUtils.convertUuid(getUniqueId()));
+            current = resp != null ? resp.getIsOp() : PatchBukkitServer.getInstance().isOp(getUniqueId(), getName());
+        } catch (Throwable t) {
+            current = PatchBukkitServer.getInstance().isOp(getUniqueId(), getName());
         }
-        if (PatchBukkitServer.getInstance().isOp(getUniqueId(), getName())) {
-            this.op = true;
+        if (current != this.op) {
+            this.op = current;
             if (this.perm != null) {
                 this.perm.recalculatePermissions();
             }
-            return true;
         }
-        try {
-            var resp = NativeBridgeFfi.isOp(BridgeUtils.convertUuid(getUniqueId()));
-            if (resp != null && resp.getIsOp()) {
-                this.op = true;
-                if (this.perm != null) {
-                    this.perm.recalculatePermissions();
-                }
-                return true;
-            }
-        } catch (Throwable ignored) {
-        }
-        return false;
+        return current;
     }
 
     @Override
