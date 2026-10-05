@@ -82,7 +82,7 @@ public class PatchBukkitBootstrap {
             }
 
             // Enable all instantiated plugins in dependency order
-            if (Bukkit.getPluginManager() instanceof PatchBukkitPluginManager pm) {
+            if (PatchBukkitPluginManager.unwrap(Bukkit.getPluginManager()) instanceof PatchBukkitPluginManager pm) {
                 for (PluginHolder holder : loadOrder) {
                     if (holder.pluginInstance != null) {
                         try {
@@ -224,7 +224,7 @@ public class PatchBukkitBootstrap {
             classLoader.init(javaPlugin);
         }
 
-        if (Bukkit.getPluginManager() instanceof PatchBukkitPluginManager pm) {
+        if (PatchBukkitPluginManager.unwrap(Bukkit.getPluginManager()) instanceof PatchBukkitPluginManager pm) {
             pm.registerPlugin(plugin);
         }
 

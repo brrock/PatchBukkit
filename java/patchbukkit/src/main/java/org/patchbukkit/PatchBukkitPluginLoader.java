@@ -87,7 +87,7 @@ public class PatchBukkitPluginLoader implements PluginLoader {
                 classLoader.init(javaPlugin);
             }
             try {
-                if (org.bukkit.Bukkit.getPluginManager() instanceof PatchBukkitPluginManager pm) {
+                if (PatchBukkitPluginManager.unwrap(org.bukkit.Bukkit.getPluginManager()) instanceof PatchBukkitPluginManager pm) {
                     pm.registerPlugin(plugin);
                 }
             } catch (Throwable ignored) {}
@@ -108,7 +108,7 @@ public class PatchBukkitPluginLoader implements PluginLoader {
 
     public static boolean enablePlugin(String pluginName) {
         try {
-            if (org.bukkit.Bukkit.getPluginManager() instanceof PatchBukkitPluginManager pm) {
+            if (PatchBukkitPluginManager.unwrap(org.bukkit.Bukkit.getPluginManager()) instanceof PatchBukkitPluginManager pm) {
                 Plugin p = pm.getPlugin(pluginName);
                 if (p != null) {
                     pm.enablePlugin(p);
@@ -124,7 +124,7 @@ public class PatchBukkitPluginLoader implements PluginLoader {
 
     public static boolean disablePlugin(String pluginName) {
         try {
-            if (org.bukkit.Bukkit.getPluginManager() instanceof PatchBukkitPluginManager pm) {
+            if (PatchBukkitPluginManager.unwrap(org.bukkit.Bukkit.getPluginManager()) instanceof PatchBukkitPluginManager pm) {
                 Plugin p = pm.getPlugin(pluginName);
                 if (p != null) {
                     pm.disablePlugin(p);

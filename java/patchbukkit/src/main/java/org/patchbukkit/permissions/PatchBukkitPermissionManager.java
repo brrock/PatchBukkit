@@ -6,13 +6,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.HashSet;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 
 import org.bukkit.permissions.Permissible;
 import org.bukkit.permissions.Permission;
 import org.bukkit.permissions.PermissionDefault;
+import org.bukkit.plugin.SimplePluginManager;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -20,31 +18,32 @@ import com.google.common.collect.ImmutableSet;
 
 import io.papermc.paper.plugin.PermissionManager;
 
+/**
+ * Permission storage backed by the {@link SimplePluginManager} fields, read on every access
+ * like Paper's StupidSPMPermissionManagerWrapper: permission plugins (LuckPerms) replace
+ * those maps via reflection and expect the server to keep using the replacements.
+ */
 public class PatchBukkitPermissionManager implements PermissionManager {
-    private final Map<String, Permission> permissions = new HashMap<>();
-    private final Map<Boolean, Set<Permission>> defaultPerms = new LinkedHashMap<>();
-    private final Map<String, Map<Permissible, Boolean>> permSubs = new HashMap<>();
-    private final Map<Boolean, Map<Permissible, Boolean>> defSubs = new HashMap<>();
+    private final SimplePluginManager simplePluginManager;
 
-    public PatchBukkitPermissionManager() {
-        this.defaultPerms().put(true, new LinkedHashSet<>());
-        this.defaultPerms().put(false, new LinkedHashSet<>());
+    public PatchBukkitPermissionManager(SimplePluginManager simplePluginManager) {
+        this.simplePluginManager = simplePluginManager;
     }
 
     public Map<String, Permission> permissions() {
-        return this.permissions;
+        return this.simplePluginManager.permissions;
     }
 
     public Map<Boolean, Set<Permission>> defaultPerms() {
-        return this.defaultPerms;
+        return this.simplePluginManager.defaultPerms;
     }
 
     public Map<String, Map<Permissible, Boolean>> permSubs() {
-        return this.permSubs;
+        return this.simplePluginManager.permSubs;
     }
 
     public Map<Boolean, Map<Permissible, Boolean>> defSubs() {
-        return this.defSubs;
+        return this.simplePluginManager.defSubs;
     }
 
     @Override

@@ -493,7 +493,7 @@ public class PatchBukkitServer implements Server {
     private String serverVersion = "git-Paper-117 (MC: " + this.minecraftVersion + ")";
     public SimpleCommandMap commandMap = new PatchBukkitCommandMap(this);
     public BukkitScheduler scheduler = new PatchBukkitScheduler();
-    public PatchBukkitPluginManager pluginManager = new PatchBukkitPluginManager(this);
+    public PatchBukkitPluginManager pluginManager = new PatchBukkitPluginManager(this, commandMap);
     public ServicesManager servicesManager = new PatchBukkitServicesManager();
 
     private final Map<UUID, Player> onlinePlayers = new ConcurrentHashMap<>();
@@ -1259,7 +1259,7 @@ public class PatchBukkitServer implements Server {
 
     @Override
     public @NotNull PluginManager getPluginManager() {
-        return this.pluginManager;
+        return this.pluginManager.getSimplePluginManager();
     }
 
     @Override

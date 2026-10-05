@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 import org.bukkit.Server;
+import org.bukkit.command.SimpleCommandMap;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -29,12 +30,34 @@ public class PatchBukkitPluginManager implements PluginManager {
     private final Server server;
     private final PatchBukkitEventManager eventManager;
     private final Map<String, Plugin> plugins = new ConcurrentHashMap<>();
+    private final SimplePluginManager simplePluginManager;
     PermissionManager permissionManager;
 
-    public PatchBukkitPluginManager(Server server) {
+    public PatchBukkitPluginManager(Server server, SimpleCommandMap commandMap) {
         this.server = server;
         this.eventManager = new PatchBukkitEventManager(server);
-        this.permissionManager = new PatchBukkitPermissionManager();
+        // Same layout as Paper: Server#getPluginManager() is a SimplePluginManager that delegates
+        // here, and permission state lives in its public maps so plugins can inject into them.
+        this.simplePluginManager = new SimplePluginManager(server, commandMap);
+        this.simplePluginManager.paperPluginManager = this;
+        this.permissionManager = new PatchBukkitPermissionManager(this.simplePluginManager);
+    }
+
+    /** The {@link SimplePluginManager} handed out by {@link Server#getPluginManager()}. */
+    public SimplePluginManager getSimplePluginManager() {
+        return simplePluginManager;
+    }
+
+    /** Unwraps the server's plugin manager to the PatchBukkit implementation, or returns null. */
+    public static @Nullable PatchBukkitPluginManager unwrap(@Nullable PluginManager pluginManager) {
+        if (pluginManager instanceof PatchBukkitPluginManager patchBukkit) {
+            return patchBukkit;
+        }
+        if (pluginManager instanceof SimplePluginManager simple
+            && simple.paperPluginManager instanceof PatchBukkitPluginManager patchBukkit) {
+            return patchBukkit;
+        }
+        return null;
     }
 
     public PatchBukkitEventManager getEventManager() {
@@ -327,7 +350,9 @@ public class PatchBukkitPluginManager implements PluginManager {
 
     @Override
     public void overridePermissionManager(@NotNull Plugin plugin, @Nullable PermissionManager permissionManager) {
-        this.permissionManager = permissionManager;
+        this.permissionManager = permissionManager != null
+            ? permissionManager
+            : new PatchBukkitPermissionManager(this.simplePluginManager);
     }
 
     @Override
