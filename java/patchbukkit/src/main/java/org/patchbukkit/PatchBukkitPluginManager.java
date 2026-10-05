@@ -243,6 +243,7 @@ public class PatchBukkitPluginManager implements PluginManager {
             return;
         }
         if (!plugin.isEnabled()) {
+            registerDescriptionPermissions(plugin);
             try {
                 if (plugin instanceof org.bukkit.plugin.java.JavaPlugin javaPlugin) {
                     javaPlugin.setEnabled(true);
@@ -251,6 +252,18 @@ public class PatchBukkitPluginManager implements PluginManager {
                 }
             } catch (Throwable ex) {
                 server.getLogger().log(Level.SEVERE, "Error enabling " + plugin.getName() + " (Is it up to date?)", ex);
+            }
+        }
+    }
+
+    // Mirrors CraftServer#enablePlugin: plugin.yml permissions are registered just before enabling.
+    private void registerDescriptionPermissions(@NotNull Plugin plugin) {
+        for (Permission perm : plugin.getDescription().getPermissions()) {
+            try {
+                this.permissionManager.addPermission(perm);
+            } catch (IllegalArgumentException ex) {
+                server.getLogger().log(Level.WARNING, "Plugin " + plugin.getDescription().getFullName()
+                    + " tried to register permission '" + perm.getName() + "' but it's already registered", ex);
             }
         }
     }
