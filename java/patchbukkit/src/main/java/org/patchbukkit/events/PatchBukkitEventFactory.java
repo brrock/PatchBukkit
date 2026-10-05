@@ -34,7 +34,27 @@ public class PatchBukkitEventFactory {
     }
 
     public static byte[] fireEventFromBytes(byte[] data, String pluginName) {
-        org.bukkit.event.Event event = createEventFromBytes(data);
+        Event protoEvent;
+        try {
+            protoEvent = Event.parseFrom(data);
+        } catch (InvalidProtocolBufferException e) {
+            LOGGER.log(Level.SEVERE, "Failed to parse Event", e);
+            return FireEventResponse.newBuilder().setCancelled(false).build().toByteArray();
+        }
+        if (protoEvent.getDataCase() == Event.DataCase.PLAYER_CUSTOM_PAYLOAD) {
+            // Plugin messages go to the Messenger, not to a Bukkit event.
+            var payload = protoEvent.getPlayerCustomPayload();
+            Player player = getPlayer(payload.getPlayerUuid().getValue());
+            if (player != null && Bukkit.getMessenger() instanceof org.patchbukkit.messaging.PatchBukkitMessenger messenger) {
+                try {
+                    messenger.handleIncomingPayload(player, payload.getChannel(), payload.getData().toByteArray());
+                } catch (Throwable t) {
+                    LOGGER.log(Level.SEVERE, "Error handling plugin message on " + payload.getChannel(), t);
+                }
+            }
+            return FireEventResponse.newBuilder().setCancelled(false).build().toByteArray();
+        }
+        org.bukkit.event.Event event = createEvent(protoEvent);
         if (event == null) {
             return FireEventResponse.newBuilder().setCancelled(false).build().toByteArray();
         }

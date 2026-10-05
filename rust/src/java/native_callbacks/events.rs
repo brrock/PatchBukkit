@@ -3010,6 +3010,22 @@ pub fn ffi_native_bridge_register_event_impl(request: RegisterEventRequest) -> O
                     request.blocking,
                 );
         }
+        // Not a Bukkit event: registered by the Messenger so incoming plugin messages
+        // reach PluginMessageListeners.
+        "patchbukkit:plugin_message" => {
+            plugin_context
+                .register_event::<
+                    pumpkin::plugin::player::player_custom_payload::PlayerCustomPayloadEvent,
+                    PatchBukkitEventHandler<pumpkin::plugin::player::player_custom_payload::PlayerCustomPayloadEvent>,
+                >(
+                    Arc::new(PatchBukkitEventHandler::new(
+                        request.plugin_name.clone(),
+                        command_tx.clone(),
+                    )),
+                    pumpkin_priority,
+                    request.blocking,
+                );
+        }
         "org.bukkit.event.entity.EntityPickupItemEvent" => {
             plugin_context
                 .register_event::<

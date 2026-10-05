@@ -58,6 +58,8 @@ import org.patchbukkit.bridge.BridgeUtils;
 import org.patchbukkit.entity.PatchBukkitEntity;
 import org.patchbukkit.persistence.PatchBukkitPersistentDataContainer;
 import patchbukkit.bridge.NativeBridgeFfi;
+import patchbukkit.world.ChunkRequest;
+import patchbukkit.world.ChunkStateResponse;
 import patchbukkit.world.CreateWorldExplosionRequest;
 import patchbukkit.world.GetForceLoadedChunksRequest;
 import patchbukkit.world.GetWorldBorderRequest;
@@ -273,14 +275,48 @@ public class PatchBukkitWorld extends PatchBukkitRegionAccessor implements World
         return getChunkAt(block.getX() >> 4, block.getZ() >> 4);
     }
 
+    /** Pumpkin generates chunks off-thread; these threads only wait for the result. */
+    private static final java.util.concurrent.ExecutorService CHUNK_LOAD_EXECUTOR =
+        java.util.concurrent.Executors.newFixedThreadPool(16, r -> {
+            Thread t = new Thread(r, "patchbukkit-chunk-loader");
+            t.setDaemon(true);
+            return t;
+        });
+
+    private ChunkRequest.Builder chunkRequest(int x, int z) {
+        return ChunkRequest.newBuilder()
+            .setWorldUuid(BridgeUtils.convertUuid(this.uuid))
+            .setX(x)
+            .setZ(z);
+    }
+
+    private @Nullable ChunkStateResponse chunkState(int x, int z, boolean checkDisk) {
+        try {
+            return NativeBridgeFfi.getChunkState(chunkRequest(x, z).setCheckDisk(checkDisk).build());
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Loads (and if asked, generates) the chunk through Pumpkin, blocking until it is ready. */
+    private boolean loadChunkNative(int x, int z, boolean generate) {
+        try {
+            ChunkStateResponse res = NativeBridgeFfi.loadChunk(chunkRequest(x, z).setGenerate(generate).build());
+            return res != null && res.getGenerated();
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     @Override
     public boolean isChunkLoaded(int x, int z) {
-        return true;
+        ChunkStateResponse res = chunkState(x, z, false);
+        return res != null && res.getLoaded();
     }
 
     @Override
     public boolean isChunkLoaded(@NotNull Chunk chunk) {
-        return true;
+        return isChunkLoaded(chunk.getX(), chunk.getZ());
     }
 
     @Override
@@ -300,6 +336,9 @@ public class PatchBukkitWorld extends PatchBukkitRegionAccessor implements World
 
     @Override
     public boolean loadChunk(int x, int z, boolean generate) {
+        if (!loadChunkNative(x, z, generate)) {
+            return false;
+        }
         getChunkAt(x, z);
         return true;
     }
@@ -337,7 +376,8 @@ public class PatchBukkitWorld extends PatchBukkitRegionAccessor implements World
 
     @Override
     public boolean isChunkGenerated(int x, int z) {
-        return true;
+        ChunkStateResponse res = chunkState(x, z, true);
+        return res != null && res.getGenerated();
     }
 
     @Override
@@ -1797,10 +1837,13 @@ public class PatchBukkitWorld extends PatchBukkitRegionAccessor implements World
 
     @Override
     public void getChunkAtAsync(int x, int z, boolean gen, boolean urgent, @Nullable Consumer<? super Chunk> cb) {
-        Chunk c = getChunkAt(x, z);
-        if (cb != null) {
-            cb.accept(c);
-        }
+        CHUNK_LOAD_EXECUTOR.execute(() -> {
+            // Paper hands the callback null when the chunk does not exist and gen is false.
+            Chunk chunk = loadChunkNative(x, z, gen) ? getChunkAt(x, z) : null;
+            if (cb != null) {
+                cb.accept(chunk);
+            }
+        });
     }
 
     @Override

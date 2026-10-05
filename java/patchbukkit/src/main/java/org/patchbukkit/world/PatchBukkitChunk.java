@@ -205,22 +205,22 @@ public class PatchBukkitChunk implements Chunk {
 
     @Override
     public boolean isGenerated() {
-        return true;
+        return this.world.isChunkGenerated(this.x, this.z);
     }
 
     @Override
     public boolean isLoaded() {
-        return true;
+        return this.world.isChunkLoaded(this.x, this.z);
     }
 
     @Override
     public boolean load(boolean generate) {
-        return true;
+        return this.world.loadChunk(this.x, this.z, generate);
     }
 
     @Override
     public boolean load() {
-        return true;
+        return load(true);
     }
 
     @Override

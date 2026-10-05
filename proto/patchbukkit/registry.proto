@@ -29,3 +29,20 @@ message SoundEvent {
 message SoundEventRegistryData {
   repeated SoundEvent sound_events = 1;
 }
+
+message GetTagsRequest {
+  // Vanilla registry name, e.g. "block", "item", "entity_type", "worldgen/biome".
+  string registry = 1;
+  // Namespaced tag key; empty to list every tag of the registry.
+  string tag = 2;
+}
+
+message TagEntry {
+  string key = 1;
+  // Namespaced keys of the tagged entries, nested tags already resolved.
+  repeated string values = 2;
+}
+
+message GetTagsResponse {
+  repeated TagEntry tags = 1;
+}

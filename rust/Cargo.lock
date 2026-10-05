@@ -3026,6 +3026,7 @@ dependencies = [
  "pumpkin-data",
  "pumpkin-protocol",
  "pumpkin-util",
+ "pumpkin-world",
  "rand 0.10.3 (git+https://github.com/rust-random/rand)",
  "rust-embed",
  "serde",

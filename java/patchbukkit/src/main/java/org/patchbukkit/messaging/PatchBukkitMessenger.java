@@ -15,6 +15,41 @@ public class PatchBukkitMessenger implements Messenger {
     private final Map<String, Set<Plugin>> outgoingByChannel = new ConcurrentHashMap<>();
     private final Map<Plugin, Set<String>> outgoingByPlugin = new ConcurrentHashMap<>();
 
+    /** Pseudo event type the Rust bridge maps to Pumpkin's custom payload event. */
+    public static final String PLUGIN_MESSAGE_BRIDGE_EVENT = "patchbukkit:plugin_message";
+
+    private final java.util.concurrent.atomic.AtomicBoolean bridgeRegistered = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Subscribes to the client's custom payloads once, so incoming plugin messages and the
+     * client's channel registrations reach Java as soon as any plugin uses messaging.
+     */
+    private void ensureBridgeRegistered(Plugin plugin) {
+        if (!bridgeRegistered.compareAndSet(false, true)) return;
+        try {
+            patchbukkit.bridge.NativeBridgeFfi.registerEvent(patchbukkit.events.RegisterEventRequest.newBuilder()
+                .setEventType(PLUGIN_MESSAGE_BRIDGE_EVENT)
+                .setPluginName(plugin.getName())
+                .setPriority(2)
+                .setBlocking(true)
+                .build());
+        } catch (Throwable t) {
+            bridgeRegistered.set(false);
+            throw t;
+        }
+    }
+
+    /** Handles one custom payload sent by a client: tracks channel registrations, then dispatches it. */
+    public void handleIncomingPayload(Player source, String channel, byte[] data) {
+        if (channel.equals("minecraft:register") || channel.equals("minecraft:unregister")) {
+            if (source instanceof org.patchbukkit.entity.PatchBukkitPlayer player) {
+                player.handleChannelPayload(channel, data);
+            }
+            return;
+        }
+        dispatchIncomingMessage(source, channel, data);
+    }
+
     private static void validateChannel(String channel) {
         if (channel == null) {
             throw new IllegalArgumentException("Channel cannot be null");
@@ -36,6 +71,7 @@ public class PatchBukkitMessenger implements Messenger {
         validateChannel(channel);
         if (isReservedChannel(channel)) throw new ReservedChannelException(channel);
 
+        ensureBridgeRegistered(plugin);
         outgoingByChannel.computeIfAbsent(channel.toLowerCase(Locale.ENGLISH), k -> new CopyOnWriteArraySet<>()).add(plugin);
         outgoingByPlugin.computeIfAbsent(plugin, k -> new CopyOnWriteArraySet<>()).add(channel.toLowerCase(Locale.ENGLISH));
     }
@@ -76,6 +112,7 @@ public class PatchBukkitMessenger implements Messenger {
         if (listener == null) throw new IllegalArgumentException("Listener cannot be null");
         if (isReservedChannel(channel)) throw new ReservedChannelException(channel);
 
+        ensureBridgeRegistered(plugin);
         PluginMessageListenerRegistration reg = new PluginMessageListenerRegistration(this, plugin, channel, listener);
         incomingByChannel.computeIfAbsent(channel.toLowerCase(Locale.ENGLISH), k -> new CopyOnWriteArraySet<>()).add(reg);
         incomingByPlugin.computeIfAbsent(plugin, k -> new CopyOnWriteArraySet<>()).add(reg);

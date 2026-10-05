@@ -69,6 +69,7 @@ service NativeBridge {
   rpc GetRespawnPoint(patchbukkit.common.UUID) returns (patchbukkit.common.Location);
 
   rpc StopSound(patchbukkit.entity.StopSoundRequest) returns (google.protobuf.Empty);
+  rpc SendPluginMessage(patchbukkit.entity.SendPluginMessageRequest) returns (google.protobuf.Empty);
   rpc SendBlockChange(patchbukkit.entity.SendBlockChangeRequest) returns (google.protobuf.Empty);
   rpc SendResourcePack(patchbukkit.entity.SendResourcePackRequest) returns (google.protobuf.Empty);
   rpc GetPlayerConnectionInfo(patchbukkit.common.UUID) returns (patchbukkit.entity.PlayerConnectionInfoResponse);
@@ -101,6 +102,7 @@ service NativeBridge {
   rpc GetLocation(patchbukkit.common.UUID) returns (patchbukkit.common.Location);
 
   rpc GetRegistryData(patchbukkit.registry.GetRegistryDataRequest) returns (patchbukkit.registry.GetRegistryDataResponse);
+  rpc GetTags(patchbukkit.registry.GetTagsRequest) returns (patchbukkit.registry.GetTagsResponse);
 
   rpc PlayerEntityPlaySound(patchbukkit.sound.PlayerEntityPlaySoundRequest) returns (google.protobuf.Empty);
   rpc PlayerPlaySound(patchbukkit.sound.PlayerPlaySoundRequest) returns (google.protobuf.Empty);
@@ -126,6 +128,8 @@ service NativeBridge {
   rpc SetChunkForceLoaded(patchbukkit.world.SetChunkForceLoadedRequest) returns (google.protobuf.Empty);
   rpc GetForceLoadedChunks(patchbukkit.world.GetForceLoadedChunksRequest) returns (patchbukkit.world.GetForceLoadedChunksResponse);
   rpc SaveWorld(patchbukkit.world.SaveWorldRequest) returns (google.protobuf.Empty);
+  rpc GetChunkState(patchbukkit.world.ChunkRequest) returns (patchbukkit.world.ChunkStateResponse);
+  rpc LoadChunk(patchbukkit.world.ChunkRequest) returns (patchbukkit.world.ChunkStateResponse);
 
   rpc GetServerInfo(patchbukkit.common.EmptyRequest) returns (patchbukkit.server.ServerInfoResponse);
   rpc SetServerMotd(patchbukkit.server.SetServerMotdRequest) returns (google.protobuf.Empty);

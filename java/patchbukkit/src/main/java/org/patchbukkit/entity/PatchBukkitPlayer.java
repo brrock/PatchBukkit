@@ -108,7 +108,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
     private int sendViewDistance = -1;
     private Scoreboard scoreboard;
     private final Set<BossBar> bossBars = new HashSet<>();
-    private final Set<String> listeningChannels = new HashSet<>();
+    private final Set<String> listeningChannels = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Set<Player> hiddenPlayers = new HashSet<>();
     private final Map<UUID, Set<Plugin>> hiddenPlayersPlugins = new HashMap<>();
     private final Map<Statistic, Integer> statistics = new EnumMap<>(Statistic.class);
@@ -1909,6 +1909,49 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
     @Override
     public void sendPluginMessage(@NotNull Plugin source, @NotNull String channel, @NotNull byte[] message) {
         StandardMessenger.validatePluginMessage(PatchBukkitServer.getInstance().getMessenger(), source, channel, message);
+        // Like CraftPlayer, only send on channels the client (or a plugin via addChannel) registered.
+        if (!this.listeningChannels.contains(channel)) {
+            return;
+        }
+        NativeBridgeFfi.sendPluginMessage(patchbukkit.entity.SendPluginMessageRequest.newBuilder()
+            .setPlayerUuid(BridgeUtils.convertUuid(this.getUniqueId()))
+            .setChannel(channel)
+            .setData(com.google.protobuf.ByteString.copyFrom(message))
+            .build());
+    }
+
+    /**
+     * Mirrors CraftPlayer#addChannel: marks the channel as registered by the client and fires
+     * {@link org.bukkit.event.player.PlayerRegisterChannelEvent} when it is new.
+     */
+    public void addChannel(String channel) {
+        if (this.listeningChannels.add(channel)) {
+            this.getServer().getPluginManager().callEvent(new org.bukkit.event.player.PlayerRegisterChannelEvent(this, channel));
+        }
+    }
+
+    /** Mirrors CraftPlayer#removeChannel. */
+    public void removeChannel(String channel) {
+        if (this.listeningChannels.remove(channel)) {
+            this.getServer().getPluginManager().callEvent(new org.bukkit.event.player.PlayerUnregisterChannelEvent(this, channel));
+        }
+    }
+
+    /**
+     * Records channels from the client's minecraft:register / minecraft:unregister payloads.
+     * Pumpkin already fires the register/unregister events for those, so none are fired here.
+     */
+    public void handleChannelPayload(String payloadChannel, byte[] data) {
+        String[] channels = new String(data, java.nio.charset.StandardCharsets.UTF_8).split("\0");
+        boolean register = payloadChannel.equals("minecraft:register");
+        for (String channel : channels) {
+            if (channel.isEmpty()) continue;
+            if (register) {
+                this.listeningChannels.add(channel);
+            } else {
+                this.listeningChannels.remove(channel);
+            }
+        }
     }
 
     @Override

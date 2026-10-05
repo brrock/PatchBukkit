@@ -242,3 +242,9 @@ message GetEntityUuidRequest {
 message GetEntityUuidResponse {
   patchbukkit.common.UUID uuid = 1;
 }
+
+message SendPluginMessageRequest {
+  patchbukkit.common.UUID player_uuid = 1;
+  string channel = 2;
+  bytes data = 3;
+}

@@ -1,4 +1,4 @@
-use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
 use std::sync::Arc;
 
 use crate::{
@@ -6,7 +6,7 @@ use crate::{
     proto::patchbukkit::{
         common::{EmptyRequest, Uuid as ProtoUuid},
         world::{
-            ChunkCoordProto, CreateWorldExplosionRequest, EntitySummaryProto, GetBlockDataRequest,
+            ChunkCoordProto, ChunkRequest, ChunkStateResponse, CreateWorldExplosionRequest, EntitySummaryProto, GetBlockDataRequest,
             GetBlockDataResponse, GetForceLoadedChunksRequest, GetForceLoadedChunksResponse,
             GetWorldBorderRequest, GetWorldEntitiesRequest, GetWorldEntitiesResponse,
             GetWorldGamerulesRequest, GetWorldGamerulesResponse, GetWorldInfoRequest,
@@ -619,4 +619,97 @@ pub fn ffi_native_bridge_save_world_impl(request: SaveWorldRequest) -> Option<()
     });
 
     Some(())
+}
+
+/// How long a Java thread may wait for Pumpkin to load or generate one chunk.
+const CHUNK_LOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn find_world_exact(world_uuid: Option<&ProtoUuid>) -> Option<Arc<pumpkin::world::World>> {
+    let ctx = CALLBACK_CONTEXT.get()?;
+    let world_uuid = uuid::Uuid::parse_str(&world_uuid?.value).ok()?;
+    ctx.plugin_context
+        .server
+        .worlds
+        .load_full()
+        .iter()
+        .find(|w| w.uuid == world_uuid)
+        .cloned()
+}
+
+/// Runs `fut` on the PatchBukkit runtime and blocks the calling (Java) thread until it
+/// finishes. A std channel is used because the JVM worker thread is itself inside a
+/// `block_on`, where tokio's own blocking helpers would panic.
+fn block_on_runtime<T: Send + 'static>(
+    fut: impl std::future::Future<Output = T> + Send + 'static,
+    timeout: std::time::Duration,
+) -> Option<T> {
+    let ctx = CALLBACK_CONTEXT.get()?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    ctx.runtime.spawn(async move {
+        let _ = tx.send(fut.await);
+    });
+    rx.recv_timeout(timeout).ok()
+}
+
+/// Whether a full chunk exists in the region files of `world`.
+async fn chunk_exists_on_disk(world: &pumpkin::world::World, pos: Vector2<i32>) -> bool {
+    use pumpkin_world::chunk::io::{FileIO, LoadedData};
+    let level = &world.level;
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let positions = [pos];
+    let fetch = level.chunk_saver.fetch_chunks(&level.level_folder, &positions, tx);
+    let (_, data) = tokio::join!(fetch, rx.recv());
+    matches!(data, Some(LoadedData::Loaded(_)))
+}
+
+pub fn ffi_native_bridge_get_chunk_state_impl(request: ChunkRequest) -> Option<ChunkStateResponse> {
+    let world = find_world_exact(request.world_uuid.as_ref())?;
+    let pos = Vector2::new(request.x, request.z);
+    if world.level.is_chunk_loaded(&pos) {
+        return Some(ChunkStateResponse {
+            loaded: true,
+            generated: true,
+        });
+    }
+    if !request.check_disk {
+        return Some(ChunkStateResponse {
+            loaded: false,
+            generated: false,
+        });
+    }
+    let generated = block_on_runtime(
+        async move { chunk_exists_on_disk(&world, pos).await },
+        CHUNK_LOAD_TIMEOUT,
+    )?;
+    Some(ChunkStateResponse {
+        loaded: false,
+        generated,
+    })
+}
+
+/// Loads a chunk through Pumpkin's chunk system, generating it when `generate` is set and
+/// it is not on disk yet. Blocks the calling Java thread until the chunk is available.
+pub fn ffi_native_bridge_load_chunk_impl(request: ChunkRequest) -> Option<ChunkStateResponse> {
+    let world = find_world_exact(request.world_uuid.as_ref())?;
+    let pos = Vector2::new(request.x, request.z);
+    let generate = request.generate;
+    block_on_runtime(
+        async move {
+            if !generate
+                && !world.level.is_chunk_loaded(&pos)
+                && !chunk_exists_on_disk(&world, pos).await
+            {
+                return ChunkStateResponse {
+                    loaded: false,
+                    generated: false,
+                };
+            }
+            world.level.get_or_fetch_chunk(pos, |_| ()).await;
+            ChunkStateResponse {
+                loaded: world.level.is_chunk_loaded(&pos),
+                generated: true,
+            }
+        },
+        CHUNK_LOAD_TIMEOUT,
+    )
 }

@@ -226,3 +226,18 @@ message GetForceLoadedChunksResponse {
 message SaveWorldRequest {
   patchbukkit.common.UUID world_uuid = 1;
 }
+
+message ChunkRequest {
+  patchbukkit.common.UUID world_uuid = 1;
+  int32 x = 2;
+  int32 z = 3;
+  // For LoadChunk: generate the chunk if it does not exist on disk yet.
+  bool generate = 4;
+  // For GetChunkState: look in the region files when the chunk is not loaded.
+  bool check_disk = 5;
+}
+
+message ChunkStateResponse {
+  bool loaded = 1;
+  bool generated = 2;
+}
