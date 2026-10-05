@@ -35,6 +35,9 @@ import org.bukkit.inventory.Merchant;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.permissions.PermissibleBase;
 import org.bukkit.permissions.Permission;
+import org.bukkit.permissions.PermissionAttachment;
+import org.bukkit.permissions.PermissionAttachmentInfo;
+import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.Range;
@@ -60,7 +63,9 @@ public class PatchBukkitHumanEntity
     implements HumanEntity {
 
     private boolean op;
-    protected final PermissibleBase perm = new PermissibleBase(this);
+    // Not final: permission plugins (LuckPerms) swap in their own PermissibleBase via reflection,
+    // exactly as they do with CraftHumanEntity.perm on Paper.
+    protected PermissibleBase perm = new PermissibleBase(this);
     protected final PlayerInventory inventory = new org.patchbukkit.inventory.PatchBukkitPlayerInventory(this);
     protected final EntityEquipment equipment = new org.patchbukkit.inventory.PatchBukkitEntityEquipment(this);
     protected final Inventory enderChest = new PatchBukkitInventory(this, 27, "Ender Chest");
@@ -182,6 +187,41 @@ public class PatchBukkitHumanEntity
     @Override
     public boolean hasPermission(Permission perm) {
         return this.perm.hasPermission(perm);
+    }
+
+    @Override
+    public PermissionAttachment addAttachment(Plugin plugin, String name, boolean value) {
+        return this.perm.addAttachment(plugin, name, value);
+    }
+
+    @Override
+    public PermissionAttachment addAttachment(Plugin plugin) {
+        return this.perm.addAttachment(plugin);
+    }
+
+    @Override
+    public @Nullable PermissionAttachment addAttachment(Plugin plugin, String name, boolean value, int ticks) {
+        return this.perm.addAttachment(plugin, name, value, ticks);
+    }
+
+    @Override
+    public @Nullable PermissionAttachment addAttachment(Plugin plugin, int ticks) {
+        return this.perm.addAttachment(plugin, ticks);
+    }
+
+    @Override
+    public void removeAttachment(PermissionAttachment attachment) {
+        this.perm.removeAttachment(attachment);
+    }
+
+    @Override
+    public void recalculatePermissions() {
+        this.perm.recalculatePermissions();
+    }
+
+    @Override
+    public Set<PermissionAttachmentInfo> getEffectivePermissions() {
+        return this.perm.getEffectivePermissions();
     }
 
     @Override
