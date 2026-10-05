@@ -54,29 +54,33 @@ public final class PatchBukkitBlockType {
                     if ("hasItemType".equals(name)) {
                         return material.isItem();
                     }
-                    if ("isSolid".equals(name)) {
-                        return material.isSolid();
-                    }
-                    if ("isAir".equals(name)) {
-                        return material.isAir();
-                    }
-                    if ("isBurnable".equals(name)) {
-                        return material.isBurnable();
-                    }
-                    if ("isEdible".equals(name)) {
-                        return material.isEdible();
-                    }
-                    if ("isOccluding".equals(name)) {
-                        return material.isOccluding();
-                    }
-                    if ("isInteractable".equals(name)) {
-                        return material.isInteractable();
-                    }
-                    if ("hasGravity".equals(name) || "isGravity".equals(name)) {
-                        return material.hasGravity();
-                    }
-                    if ("translationKey".equals(name) || "getTranslationKey".equals(name)) {
-                        return material.getTranslationKey();
+                    // Paper's Material delegates these to BlockType, so they must not call back into Material.
+                    switch (name) {
+                        case "isSolid":
+                            return PatchBukkitTypeData.block(material).getSolid();
+                        case "isAir":
+                            return PatchBukkitTypeData.block(material).getAir();
+                        case "isBurnable":
+                            return PatchBukkitTypeData.block(material).getBurnable();
+                        case "isFlammable":
+                            return PatchBukkitTypeData.block(material).getFlammable();
+                        case "isOccluding":
+                            return PatchBukkitTypeData.block(material).getOccluding();
+                        case "hasCollision":
+                            return PatchBukkitTypeData.block(material).getHasCollision();
+                        case "getHardness":
+                            return PatchBukkitTypeData.block(material).getHardness();
+                        case "getBlastResistance":
+                            return PatchBukkitTypeData.block(material).getBlastResistance();
+                        case "getSlipperiness":
+                            return PatchBukkitTypeData.block(material).getSlipperiness();
+                        case "translationKey":
+                        case "getTranslationKey": {
+                            String key = PatchBukkitTypeData.block(material).getTranslationKey();
+                            return key.isEmpty() ? "block." + material.getKey().getNamespace() + "." + material.getKey().getKey() : key;
+                        }
+                        default:
+                            break;
                     }
                     if ("typed".equals(name)) {
                         return proxy;

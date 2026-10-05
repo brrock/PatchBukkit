@@ -26,17 +26,36 @@ public final class PatchBukkitItemType {
                     if ("asMaterial".equals(name)) {
                         return material;
                     }
-                    if ("getMaxStackSize".equals(name)) {
-                        return material.getMaxStackSize();
-                    }
-                    if ("getMaxDurability".equals(name)) {
-                        return (int) material.getMaxDurability();
-                    }
-                    if ("isEdible".equals(name)) {
-                        return material.isEdible();
-                    }
-                    if ("isRecord".equals(name)) {
-                        return material.isRecord();
+                    // Paper's Material delegates these to ItemType, so they must not call back into Material.
+                    switch (name) {
+                        case "getMaxStackSize": {
+                            var data = PatchBukkitTypeData.item(material);
+                            return data.getFound() ? data.getMaxStackSize() : 64;
+                        }
+                        case "getMaxDurability":
+                            return (short) PatchBukkitTypeData.item(material).getMaxDurability();
+                        case "isEdible":
+                            return PatchBukkitTypeData.item(material).getEdible();
+                        case "isRecord":
+                            return PatchBukkitTypeData.item(material).getRecord();
+                        case "isFuel":
+                            return PatchBukkitTypeData.item(material).getFuel();
+                        case "isCompostable":
+                            return PatchBukkitTypeData.item(material).getCompostChance() > 0;
+                        case "getCompostChance": {
+                            float chance = PatchBukkitTypeData.item(material).getCompostChance();
+                            if (chance <= 0) {
+                                throw new IllegalArgumentException(material.getKey() + " is not compostable");
+                            }
+                            return chance;
+                        }
+                        case "getTranslationKey":
+                        case "translationKey": {
+                            String key = PatchBukkitTypeData.item(material).getTranslationKey();
+                            return key.isEmpty() ? "item." + material.getKey().getNamespace() + "." + material.getKey().getKey() : key;
+                        }
+                        default:
+                            break;
                     }
                     if ("createItemStack".equals(name)) {
                         int amount = (args != null && args.length > 0 && args[0] instanceof Integer i) ? i : 1;
