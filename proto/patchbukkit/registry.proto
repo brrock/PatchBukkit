@@ -46,3 +46,39 @@ message TagEntry {
 message GetTagsResponse {
   repeated TagEntry tags = 1;
 }
+
+message GetItemTypeDataRequest {
+  // Namespaced item key, e.g. "minecraft:diamond_sword".
+  string key = 1;
+}
+
+message ItemTypeData {
+  bool found = 1;
+  int32 max_stack_size = 2;
+  int32 max_durability = 3;
+  bool edible = 4;
+  bool record = 5;
+  bool fuel = 6;
+  float compost_chance = 7;
+  string translation_key = 8;
+}
+
+message GetBlockTypeDataRequest {
+  // Namespaced block key, e.g. "minecraft:stone".
+  string key = 1;
+}
+
+message BlockTypeData {
+  bool found = 1;
+  float hardness = 2;
+  float blast_resistance = 3;
+  float slipperiness = 4;
+  bool air = 5;
+  bool solid = 6;
+  bool flammable = 7;
+  bool burnable = 8;
+  bool occluding = 9;
+  bool has_collision = 10;
+  bool has_item = 11;
+  string translation_key = 12;
+}

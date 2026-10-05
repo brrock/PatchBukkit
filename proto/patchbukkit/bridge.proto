@@ -103,6 +103,8 @@ service NativeBridge {
 
   rpc GetRegistryData(patchbukkit.registry.GetRegistryDataRequest) returns (patchbukkit.registry.GetRegistryDataResponse);
   rpc GetTags(patchbukkit.registry.GetTagsRequest) returns (patchbukkit.registry.GetTagsResponse);
+  rpc GetItemTypeData(patchbukkit.registry.GetItemTypeDataRequest) returns (patchbukkit.registry.ItemTypeData);
+  rpc GetBlockTypeData(patchbukkit.registry.GetBlockTypeDataRequest) returns (patchbukkit.registry.BlockTypeData);
 
   rpc PlayerEntityPlaySound(patchbukkit.sound.PlayerEntityPlaySoundRequest) returns (google.protobuf.Empty);
   rpc PlayerPlaySound(patchbukkit.sound.PlayerPlaySoundRequest) returns (google.protobuf.Empty);
