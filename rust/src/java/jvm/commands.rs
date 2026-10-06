@@ -53,6 +53,13 @@ pub enum JvmCommand {
         plugin: String,
         respond_to: oneshot::Sender<FireEventResponse>, // true = cancelled
     },
+    /// Registers (`joined`) or unregisters a player in the Bukkit server's online list.
+    PlayerLifecycle {
+        player: Arc<pumpkin::entity::player::Player>,
+        server: Arc<pumpkin::server::Server>,
+        joined: bool,
+        respond_to: oneshot::Sender<()>,
+    },
     TriggerCommand {
         full_command: String,
         command_sender: SimpleCommandSender,

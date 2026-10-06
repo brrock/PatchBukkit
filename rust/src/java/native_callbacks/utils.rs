@@ -20,6 +20,17 @@ pub fn cache_player(player: Arc<Player>) {
     }
 }
 
+pub fn uncache_player(player: &Arc<Player>) {
+    if let Ok(mut write_guard) = PLAYER_HANDLE_CACHE.write()
+        && let Some(cache) = write_guard.as_mut()
+        && cache
+            .get(&player.gameprofile.id)
+            .is_some_and(|cached| Arc::ptr_eq(cached, player))
+    {
+        cache.remove(&player.gameprofile.id);
+    }
+}
+
 pub fn with_player<F, R>(proto_uuid: Option<&ProtoUuid>, f: F) -> Option<R>
 where
     F: FnOnce(Arc<Player>) -> R,

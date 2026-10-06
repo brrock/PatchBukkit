@@ -7,7 +7,7 @@ use pumpkin::{entity::player::Player, server::Server};
 
 use crate::{
     events::handler::JvmEventPayload,
-    proto::patchbukkit::events::{FireEventResponse, event::Data},
+    proto::patchbukkit::events::FireEventResponse,
 };
 
 pub struct EventManager;
@@ -30,13 +30,6 @@ impl EventManager {
         payload: JvmEventPayload,
         plugin_name: String,
     ) -> Result<FireEventResponse> {
-        if let Some(ref event) = payload.event.data
-            && matches!(event, Data::PlayerJoin(_))
-            && let Some(ref player) = payload.context.player
-        {
-            Self::register_player(env, player, &payload.context.server)?;
-        }
-
         let bytes = payload.event.encode_to_vec();
         let j_bytes = env.byte_array_from_slice(&bytes)?;
         let plugin_name_jstr = env.new_string(&plugin_name)?;
@@ -91,6 +84,17 @@ impl EventManager {
             ],
         )?;
 
+        Ok(())
+    }
+
+    pub fn unregister_player(env: &mut Env, player: &Arc<Player>) -> Result<()> {
+        let uuid_jstr = env.new_string(player.gameprofile.id.to_string())?;
+        env.call_static_method(
+            jni::jni_str!("org/patchbukkit/PatchBukkitServer"),
+            jni::jni_str!("unregisterPlayer"),
+            jni::jni_sig!("(Ljava/lang/String;)V"),
+            &[(&uuid_jstr).into()],
+        )?;
         Ok(())
     }
 }

@@ -941,6 +941,13 @@ public class PatchBukkitServer implements Server {
     public static void registerPlayer(String uuidStr, String name, boolean isOp, int entityId) {
         try {
             UUID uuid = UUID.fromString(uuidStr);
+            if (org.bukkit.Bukkit.getServer() instanceof PatchBukkitServer server
+                && server.onlinePlayers.get(uuid) instanceof PatchBukkitPlayer existing
+                && existing.getName().equals(name)) {
+                // Keep the same object for the whole session; plugins hold on to it.
+                existing.setEntityId(entityId);
+                return;
+            }
             PatchBukkitPlayer player = new org.patchbukkit.entity.CraftPlayer(uuid, name, entityId);
             if (isOp) {
                 player.setOp(true);
@@ -955,6 +962,16 @@ public class PatchBukkitServer implements Server {
 
     public PatchBukkitEventManager getEventManager() {
         return this.pluginManager.getEventManager();
+    }
+
+    public static void unregisterPlayer(String uuidStr) {
+        try {
+            if (org.bukkit.Bukkit.getServer() instanceof PatchBukkitServer server) {
+                server.unregisterPlayer(UUID.fromString(uuidStr));
+            }
+        } catch (Throwable t) {
+            logger.log(Level.SEVERE, "Failed to unregister player: " + uuidStr, t);
+        }
     }
 
     public void unregisterPlayer(UUID uuid) {
