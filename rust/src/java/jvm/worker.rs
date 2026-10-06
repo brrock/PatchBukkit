@@ -184,6 +184,22 @@ impl JvmWorker {
 
                     let _ = respond_to.send(response);
                 }
+                JvmCommand::UnregisterPlayer { uuid } => {
+                    if let Some(ref jvm) = self.jvm
+                        && let Err(e) = jvm.attach_current_thread(|env| -> anyhow::Result<()> {
+                            let uuid_jstr = env.new_string(uuid.to_string())?;
+                            env.call_static_method(
+                                jni::jni_str!("org/patchbukkit/PatchBukkitServer"),
+                                jni::jni_str!("unregisterPlayer"),
+                                jni::jni_sig!("(Ljava/lang/String;)V"),
+                                &[(&uuid_jstr).into()],
+                            )?;
+                            Ok(())
+                        })
+                    {
+                        tracing::error!("Failed to unregister player {uuid}: {e}");
+                    }
+                }
                 JvmCommand::TriggerCommand {
                     full_command,
                     command_sender,

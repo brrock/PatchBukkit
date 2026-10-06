@@ -6691,3 +6691,38 @@ where
         })
     }
 }
+
+/// Removes a player from the Bukkit online-player view once every Bukkit `PlayerQuitEvent`
+/// listener has seen them. Registered non-blocking, and Pumpkin runs all blocking handlers
+/// (every Bukkit listener) before non-blocking ones.
+pub struct PlayerLeaveUnregisterHandler {
+    command_tx: mpsc::Sender<JvmCommand>,
+}
+
+impl PlayerLeaveUnregisterHandler {
+    #[must_use]
+    pub const fn new(command_tx: mpsc::Sender<JvmCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl EventHandler<pumpkin::plugin::player::player_leave::PlayerLeaveEvent>
+    for PlayerLeaveUnregisterHandler
+{
+    fn handle<'a>(
+        &'a self,
+        _server: &'a Arc<Server>,
+        event: &'a pumpkin::plugin::player::player_leave::PlayerLeaveEvent,
+    ) -> BoxFuture<'a, ()> {
+        let uuid = event.player.gameprofile.id;
+        Box::pin(async move {
+            if let Err(e) = self
+                .command_tx
+                .send(JvmCommand::UnregisterPlayer { uuid })
+                .await
+            {
+                tracing::error!("Failed to send player unregister to JVM worker: {e}");
+            }
+        })
+    }
+}

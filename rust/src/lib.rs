@@ -42,6 +42,14 @@ pub async fn on_load_inner(plugin: &PatchBukkitPlugin, server: Arc<Context>) -> 
     // Manage embedded resources
     setup_resources(&dirs.jassets).map_err(|e| format!("Failed to setup resources: {e}"))?;
 
+    server.register_event::<pumpkin::plugin::player::player_leave::PlayerLeaveEvent, _>(
+        Arc::new(events::handler::PlayerLeaveUnregisterHandler::new(
+            plugin.command_tx.clone(),
+        )),
+        pumpkin::plugin::EventPriority::Lowest,
+        false,
+    );
+
     let runtime_handle = plugin.runtime.handle().clone();
     let command_tx = plugin.command_tx.clone();
     let server_clone = server;

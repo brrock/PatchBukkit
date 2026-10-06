@@ -53,6 +53,10 @@ pub enum JvmCommand {
         plugin: String,
         respond_to: oneshot::Sender<FireEventResponse>, // true = cancelled
     },
+    /// Drops a player that left from the Bukkit online-player view.
+    UnregisterPlayer {
+        uuid: Uuid,
+    },
     TriggerCommand {
         full_command: String,
         command_sender: SimpleCommandSender,

@@ -969,6 +969,17 @@ public class PatchBukkitServer implements Server {
         return this.pluginManager.getEventManager();
     }
 
+    /** Called from Rust once every PlayerQuitEvent listener has run for a player that left. */
+    public static void unregisterPlayer(String uuidStr) {
+        try {
+            if (org.bukkit.Bukkit.getServer() instanceof PatchBukkitServer server) {
+                server.unregisterPlayer(UUID.fromString(uuidStr));
+            }
+        } catch (IllegalArgumentException e) {
+            logger.log(Level.WARNING, "Failed to unregister player with invalid UUID " + uuidStr, e);
+        }
+    }
+
     public void unregisterPlayer(UUID uuid) {
         Player p = this.onlinePlayers.remove(uuid);
         if (p != null) {
