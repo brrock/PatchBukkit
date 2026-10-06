@@ -55,7 +55,13 @@ import net.kyori.adventure.sound.Sound.Source;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.util.TriState;
 import patchbukkit.bridge.NativeBridgeFfi;
+import patchbukkit.entity.EntityPassengerRequest;
+import patchbukkit.entity.EntityStateResponse;
+import patchbukkit.entity.SetEntityStateRequest;
 import patchbukkit.entity.SetEntityVelocityRequest;
+import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.patchbukkit.persistence.PatchBukkitPersistentDataContainer;
 import patchbukkit.entity.TeleportEntityRequest;
 
 public class PatchBukkitEntity implements Entity {
@@ -81,6 +87,35 @@ public class PatchBukkitEntity implements Entity {
             this.perm = new PermissibleBase(this);
         }
         return this.perm;
+    }
+
+    // Vanilla Entity#getTicksRequiredToFreeze and Entity.MAX_TAGS.
+    private static final int TICKS_REQUIRED_TO_FREEZE = 140;
+    private static final int MAX_SCOREBOARD_TAGS = 1024;
+
+    private final PersistentDataContainer persistentDataContainer = new PatchBukkitPersistentDataContainer();
+    private @Nullable EntityDamageEvent lastDamageCause;
+
+    /** Reads this entity's live state from Pumpkin. */
+    protected EntityStateResponse state() {
+        EntityStateResponse state = NativeBridgeFfi.getEntityState(BridgeUtils.convertUuid(this.uuid));
+        return state != null ? state : EntityStateResponse.getDefaultInstance();
+    }
+
+    /** Applies the fields set by {@code edit} to this entity in Pumpkin. */
+    protected void updateState(java.util.function.Consumer<SetEntityStateRequest.Builder> edit) {
+        SetEntityStateRequest.Builder builder = SetEntityStateRequest.newBuilder().setUuid(BridgeUtils.convertUuid(this.uuid));
+        edit.accept(builder);
+        NativeBridgeFfi.setEntityState(builder.build());
+    }
+
+    private static @Nullable Component customNameFromState(EntityStateResponse state) {
+        return state.hasCustomName() ? GsonComponentSerializer.gson().deserialize(state.getCustomName()) : null;
+    }
+
+    private static @Nullable Entity resolveEntity(UUID uuid) {
+        Player player = Bukkit.getPlayer(uuid);
+        return player != null ? player : Bukkit.getEntity(uuid);
     }
 
     private Location cachedLocation;
@@ -248,32 +283,28 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public @Nullable Component customName() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'customName'");
+        return customNameFromState(state());
     }
 
     @Override
     public void customName(@Nullable Component customName) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'customName'");
+        updateState(b -> b.setCustomName(customName == null ? "" : GsonComponentSerializer.gson().serialize(customName)));
     }
 
     @Override
     public @Nullable String getCustomName() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getCustomName'");
+        Component customName = customName();
+        return customName == null ? null : LegacyComponentSerializer.legacySection().serialize(customName);
     }
 
     @Override
     public void setCustomName(@Nullable String name) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setCustomName'");
+        customName(name == null ? null : LegacyComponentSerializer.legacySection().deserialize(name));
     }
 
     @Override
     public @NotNull PersistentDataContainer getPersistentDataContainer() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getPersistentDataContainer'");
+        return this.persistentDataContainer;
     }
 
     public <T> @org.jspecify.annotations.Nullable T getData(Valued<T> type) {
@@ -361,20 +392,19 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public double getHeight() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getHeight'");
+        return state().getHeight();
     }
 
     @Override
     public double getWidth() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getWidth'");
+        return state().getWidth();
     }
 
     @Override
     public @NotNull BoundingBox getBoundingBox() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getBoundingBox'");
+        EntityStateResponse state = state();
+        return new BoundingBox(state.getBoundingBoxMin().getX(), state.getBoundingBoxMin().getY(), state.getBoundingBoxMin().getZ(),
+            state.getBoundingBoxMax().getX(), state.getBoundingBoxMax().getY(), state.getBoundingBoxMax().getZ());
     }
 
     @Override
@@ -385,8 +415,7 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public boolean isInWater() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isInWater'");
+        return state().getInWater();
     }
 
     @Override
@@ -434,27 +463,29 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public boolean teleport(@NotNull Entity destination) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'teleport'");
+        return teleport(destination.getLocation());
     }
 
     @Override
     public boolean teleport(@NotNull Entity destination, @NotNull TeleportCause cause) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'teleport'");
+        return teleport(destination.getLocation(), cause);
     }
 
     @Override
     public @NotNull CompletableFuture<Boolean> teleportAsync(@NotNull Location loc, @NotNull TeleportCause cause,
             @NotNull TeleportFlag @NotNull... teleportFlags) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'teleportAsync'");
+        return CompletableFuture.completedFuture(teleport(loc, cause));
     }
 
     @Override
     public @NotNull List<Entity> getNearbyEntities(double x, double y, double z) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getNearbyEntities'");
+        World world = getWorld();
+        if (world == null) {
+            return new ArrayList<>();
+        }
+        List<Entity> nearby = new ArrayList<>(world.getNearbyEntities(getLocation(), x, y, z));
+        nearby.removeIf(entity -> entity.getUniqueId().equals(this.uuid));
+        return nearby;
     }
 
     @Override
@@ -475,91 +506,77 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public int getFireTicks() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getFireTicks'");
+        return state().getFireTicks();
     }
 
     @Override
     public int getMaxFireTicks() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getMaxFireTicks'");
+        // Vanilla Entity#getFireImmuneTicks: players get 20 ticks, everything else 1.
+        return this instanceof Player ? 20 : 1;
     }
 
     @Override
     public void setFireTicks(int ticks) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setFireTicks'");
+        updateState(b -> b.setFireTicks(ticks));
     }
 
     @Override
     public void setVisualFire(boolean fire) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setVisualFire'");
+        updateState(b -> b.setVisualFire(fire));
     }
 
     @Override
     public void setVisualFire(@NotNull TriState fire) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setVisualFire'");
+        updateState(b -> b.setVisualFire(fire == TriState.TRUE));
     }
 
     public boolean isVisualFire() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isVisualFire'");
+        return state().getVisualFire();
     }
 
     @Override
     public @NotNull TriState getVisualFire() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getVisualFire'");
+        return TriState.byBoolean(state().getVisualFire());
     }
 
     @Override
     public int getFreezeTicks() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getFreezeTicks'");
+        return state().getFreezeTicks();
     }
 
     @Override
     public int getMaxFreezeTicks() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getMaxFreezeTicks'");
+        return TICKS_REQUIRED_TO_FREEZE;
     }
 
     @Override
     public void setFreezeTicks(int ticks) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setFreezeTicks'");
+        updateState(b -> b.setFreezeTicks(ticks));
     }
 
     @Override
     public boolean isFrozen() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isFrozen'");
+        return state().getFreezeTicks() >= TICKS_REQUIRED_TO_FREEZE;
     }
 
     @Override
     public void setInvisible(boolean invisible) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setInvisible'");
+        updateState(b -> b.setInvisible(invisible));
     }
 
     @Override
     public boolean isInvisible() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isInvisible'");
+        return state().getInvisible();
     }
 
     @Override
     public void setNoPhysics(boolean noPhysics) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setNoPhysics'");
+        updateState(b -> b.setNoPhysics(noPhysics));
     }
 
     @Override
     public boolean hasNoPhysics() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'hasNoPhysics'");
+        return state().getNoPhysics();
     }
 
     @Override
@@ -576,20 +593,19 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public void remove() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'remove'");
+        NativeBridgeFfi.removeEntity(BridgeUtils.convertUuid(this.uuid));
     }
 
     @Override
     public boolean isDead() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isDead'");
+        EntityStateResponse state = state();
+        return !state.getFound() || state.getRemoved() || state.getDead();
     }
 
     @Override
     public boolean isValid() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isValid'");
+        EntityStateResponse state = state();
+        return state.getFound() && !state.getRemoved() && !state.getDead();
     }
 
     @Override
@@ -611,44 +627,58 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public @Nullable Entity getPassenger() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getPassenger'");
+        List<Entity> passengers = getPassengers();
+        return passengers.isEmpty() ? null : passengers.get(0);
     }
 
     @Override
     public boolean setPassenger(@NotNull Entity passenger) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setPassenger'");
+        if (passenger.getUniqueId().equals(this.uuid)) {
+            return false;
+        }
+        eject();
+        return addPassenger(passenger);
     }
 
     @Override
     public @NotNull List<Entity> getPassengers() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getPassengers'");
+        List<Entity> passengers = new ArrayList<>();
+        for (var passenger : state().getPassengersList()) {
+            Entity entity = resolveEntity(BridgeUtils.convertUuid(passenger));
+            if (entity != null) {
+                passengers.add(entity);
+            }
+        }
+        return passengers;
     }
 
     @Override
     public boolean addPassenger(@NotNull Entity passenger) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'addPassenger'");
+        var response = NativeBridgeFfi.addEntityPassenger(EntityPassengerRequest.newBuilder()
+            .setVehicle(BridgeUtils.convertUuid(this.uuid))
+            .setPassenger(BridgeUtils.convertUuid(passenger.getUniqueId()))
+            .build());
+        return response != null && response.getSuccess();
     }
 
     @Override
     public boolean removePassenger(@NotNull Entity passenger) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'removePassenger'");
+        var response = NativeBridgeFfi.removeEntityPassenger(EntityPassengerRequest.newBuilder()
+            .setVehicle(BridgeUtils.convertUuid(this.uuid))
+            .setPassenger(BridgeUtils.convertUuid(passenger.getUniqueId()))
+            .build());
+        return response != null && response.getSuccess();
     }
 
     @Override
     public boolean isEmpty() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isEmpty'");
+        return state().getPassengersCount() == 0;
     }
 
     @Override
     public boolean eject() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'eject'");
+        var response = NativeBridgeFfi.ejectEntityPassengers(BridgeUtils.convertUuid(this.uuid));
+        return response != null && response.getSuccess();
     }
 
     public @NotNull ItemStack getPickItemStack() {
@@ -670,14 +700,12 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public void setLastDamageCause(@Nullable EntityDamageEvent event) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setLastDamageCause'");
+        this.lastDamageCause = event;
     }
 
     @Override
     public @Nullable EntityDamageEvent getLastDamageCause() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getLastDamageCause'");
+        return this.lastDamageCause;
     }
 
     @Override
@@ -687,14 +715,15 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public int getTicksLived() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getTicksLived'");
+        return state().getTicksLived();
     }
 
     @Override
     public void setTicksLived(int value) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setTicksLived'");
+        if (value <= 0) {
+            throw new IllegalArgumentException("Age value (" + value + ") must be positive");
+        }
+        updateState(b -> b.setTicksLived(value));
     }
 
     @Override
@@ -728,32 +757,29 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public boolean isInsideVehicle() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isInsideVehicle'");
+        return state().hasVehicle();
     }
 
     @Override
     public boolean leaveVehicle() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'leaveVehicle'");
+        var response = NativeBridgeFfi.leaveEntityVehicle(BridgeUtils.convertUuid(this.uuid));
+        return response != null && response.getSuccess();
     }
 
     @Override
     public @Nullable Entity getVehicle() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getVehicle'");
+        EntityStateResponse state = state();
+        return state.hasVehicle() ? resolveEntity(BridgeUtils.convertUuid(state.getVehicle())) : null;
     }
 
     @Override
     public void setCustomNameVisible(boolean flag) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setCustomNameVisible'");
+        updateState(b -> b.setCustomNameVisible(flag));
     }
 
     @Override
     public boolean isCustomNameVisible() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isCustomNameVisible'");
+        return state().getCustomNameVisible();
     }
 
     @Override
@@ -779,80 +805,79 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public void setGlowing(boolean flag) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setGlowing'");
+        updateState(b -> b.setGlowing(flag));
     }
 
     @Override
     public boolean isGlowing() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isGlowing'");
+        return state().getGlowing();
     }
 
     @Override
     public void setInvulnerable(boolean flag) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setInvulnerable'");
+        updateState(b -> b.setInvulnerable(flag));
     }
 
     @Override
     public boolean isInvulnerable() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isInvulnerable'");
+        return state().getInvulnerable();
     }
 
     @Override
     public boolean isSilent() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isSilent'");
+        return state().getSilent();
     }
 
     @Override
     public void setSilent(boolean flag) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setSilent'");
+        updateState(b -> b.setSilent(flag));
     }
 
     @Override
     public boolean hasGravity() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'hasGravity'");
+        return !state().getNoGravity();
     }
 
     @Override
     public void setGravity(boolean gravity) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setGravity'");
+        updateState(b -> b.setNoGravity(!gravity));
     }
 
     @Override
     public int getPortalCooldown() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getPortalCooldown'");
+        return state().getPortalCooldown();
     }
 
     @Override
     public void setPortalCooldown(int cooldown) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setPortalCooldown'");
+        if (cooldown < 0) {
+            throw new IllegalArgumentException("Portal cooldown must not be negative");
+        }
+        updateState(b -> b.setPortalCooldown(cooldown));
     }
 
     @Override
     public @NotNull Set<String> getScoreboardTags() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getScoreboardTags'");
+        return new java.util.HashSet<>(state().getScoreboardTagsList());
     }
 
     @Override
     public boolean addScoreboardTag(@NotNull String tag) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'addScoreboardTag'");
+        List<String> tags = state().getScoreboardTagsList();
+        if (tags.contains(tag) || tags.size() >= MAX_SCOREBOARD_TAGS) {
+            return false;
+        }
+        updateState(b -> b.addAddScoreboardTags(tag));
+        return true;
     }
 
     @Override
     public boolean removeScoreboardTag(@NotNull String tag) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'removeScoreboardTag'");
+        if (!state().getScoreboardTagsList().contains(tag)) {
+            return false;
+        }
+        updateState(b -> b.addRemoveScoreboardTags(tag));
+        return true;
     }
 
     @Override
@@ -863,8 +888,14 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public @NotNull BlockFace getFacing() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getFacing'");
+        // Same rounding as vanilla Direction.fromYRot.
+        int quarter = (int) Math.floor(getLocation().getYaw() / 90.0 + 0.5) & 3;
+        return switch (quarter) {
+            case 0 -> BlockFace.SOUTH;
+            case 1 -> BlockFace.WEST;
+            case 2 -> BlockFace.NORTH;
+            default -> BlockFace.EAST;
+        };
     }
 
     @Override
@@ -913,8 +944,8 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public boolean isInWorld() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isInWorld'");
+        EntityStateResponse state = state();
+        return state.getFound() && !state.getRemoved();
     }
 
     @Override
@@ -985,8 +1016,7 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public boolean isInLava() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isInLava'");
+        return state().getInLava();
     }
 
     @Override
@@ -1009,38 +1039,32 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public boolean isInPowderedSnow() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isInPowderedSnow'");
+        return state().getInPowderSnow();
     }
 
     @Override
     public double getX() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getX'");
+        return getLocation().getX();
     }
 
     @Override
     public double getY() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getY'");
+        return getLocation().getY();
     }
 
     @Override
     public double getZ() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getZ'");
+        return getLocation().getZ();
     }
 
     @Override
     public float getPitch() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getPitch'");
+        return getLocation().getPitch();
     }
 
     @Override
     public float getYaw() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getYaw'");
+        return getLocation().getYaw();
     }
 
     @Override
@@ -1063,8 +1087,7 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public @NotNull String getScoreboardEntryName() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getScoreboardEntryName'");
+        return this instanceof Player ? getName() : this.uuid.toString();
     }
 
     public void broadcastHurtAnimation(@NotNull Collection<Player> players) {

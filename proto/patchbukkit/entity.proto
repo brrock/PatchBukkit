@@ -242,3 +242,62 @@ message GetEntityUuidRequest {
 message GetEntityUuidResponse {
   patchbukkit.common.UUID uuid = 1;
 }
+
+message EntityStateResponse {
+  bool found = 1;
+  int32 fire_ticks = 2;
+  bool visual_fire = 3;
+  int32 freeze_ticks = 4;
+  bool in_water = 5;
+  bool in_lava = 6;
+  bool in_powder_snow = 7;
+  bool invulnerable = 8;
+  bool silent = 9;
+  bool no_gravity = 10;
+  bool glowing = 11;
+  bool invisible = 12;
+  bool custom_name_visible = 13;
+  // JSON text component, unset when the entity has no custom name.
+  optional string custom_name = 14;
+  double width = 15;
+  double height = 16;
+  patchbukkit.common.Vec3 bounding_box_min = 17;
+  patchbukkit.common.Vec3 bounding_box_max = 18;
+  int32 ticks_lived = 19;
+  bool removed = 20;
+  bool dead = 21;
+  int32 portal_cooldown = 22;
+  repeated string scoreboard_tags = 23;
+  repeated patchbukkit.common.UUID passengers = 24;
+  patchbukkit.common.UUID vehicle = 25;
+  bool no_physics = 26;
+}
+
+message SetEntityStateRequest {
+  patchbukkit.common.UUID uuid = 1;
+  optional int32 fire_ticks = 2;
+  optional bool visual_fire = 3;
+  optional int32 freeze_ticks = 4;
+  optional bool invulnerable = 5;
+  optional bool silent = 6;
+  optional bool no_gravity = 7;
+  optional bool glowing = 8;
+  optional bool invisible = 9;
+  optional bool custom_name_visible = 10;
+  // JSON text component; an empty string clears the custom name.
+  optional string custom_name = 11;
+  optional int32 ticks_lived = 12;
+  optional int32 portal_cooldown = 13;
+  optional bool no_physics = 14;
+  repeated string add_scoreboard_tags = 15;
+  repeated string remove_scoreboard_tags = 16;
+}
+
+message EntityPassengerRequest {
+  patchbukkit.common.UUID vehicle = 1;
+  patchbukkit.common.UUID passenger = 2;
+}
+
+message EntityActionResponse {
+  bool success = 1;
+}
