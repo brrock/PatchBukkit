@@ -1,9 +1,6 @@
 package org.patchbukkit.inventory;
 
 import java.lang.reflect.Proxy;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemFactory;
 import org.bukkit.inventory.ItemStack;
@@ -18,31 +15,36 @@ public class PatchBukkitItemFactory {
             new Class<?>[] { ItemFactory.class },
             (proxy, method, args) -> {
                 String name = method.getName();
-                if ("getItemMeta".equals(name) || "createItemMeta".equals(name) || "asMetaFor".equals(name)) {
-                    if (args != null && args.length > 0 && args[0] instanceof Material mat && mat == Material.AIR) {
-                        return null;
-                    }
-                    return createMeta();
+                if ("getItemMeta".equals(name)) {
+                    return args[0] instanceof Material mat ? PatchBukkitItemMeta.create(mat) : null;
+                }
+                if ("asMetaFor".equals(name)) {
+                    Material target = args[1] instanceof ItemStack stack ? stack.getType() : (Material) args[1];
+                    return PatchBukkitItemMeta.convert((ItemMeta) args[0], target);
                 }
                 if ("isApplicable".equals(name)) {
-                    return true;
+                    Material target = args[1] instanceof ItemStack stack ? stack.getType() : (Material) args[1];
+                    return args[0] == null || (target != null && !target.isAir() && PatchBukkitItemMeta.handler((ItemMeta) args[0]) != null);
                 }
                 if ("equals".equals(name)) {
                     if (args != null && args.length == 2) {
-                        return Objects.equals(args[0], args[1]);
+                        return metaEquals((ItemMeta) args[0], (ItemMeta) args[1]);
                     }
                     return false;
+                }
+                if ("hashCode".equals(name) && (args == null || args.length == 0)) {
+                    return System.identityHashCode(proxy);
                 }
                 if ("ensureServerConform".equals(name)) {
                     if (args != null && args.length > 0 && args[0] instanceof ItemStack stack) {
                         if (stack instanceof PatchBukkitItemStack) {
                             return stack;
                         }
-                        try {
-                            return new PatchBukkitItemStack(stack.getType(), stack.getAmount());
-                        } catch (Throwable ignored) {
-                            return new PatchBukkitItemStack(Material.AIR, 0);
+                        PatchBukkitItemStack conform = new PatchBukkitItemStack(stack.getType(), stack.getAmount());
+                        if (stack.hasItemMeta()) {
+                            conform.setItemMeta(stack.getItemMeta());
                         }
+                        return conform;
                     }
                     return new PatchBukkitItemStack(Material.AIR, 0);
                 }
@@ -62,39 +64,14 @@ public class PatchBukkitItemFactory {
         );
     }
 
-    public static ItemMeta createMeta() {
-        Map<String, Object> state = new HashMap<>();
-        return (ItemMeta) Proxy.newProxyInstance(
-            ItemMeta.class.getClassLoader(),
-            new Class<?>[] { ItemMeta.class },
-            (proxy, method, args) -> {
-                String name = method.getName();
-                if ("hasDisplayName".equals(name)) return state.containsKey("displayName");
-                if ("getDisplayName".equals(name)) return state.get("displayName");
-                if ("setDisplayName".equals(name)) {
-                    if (args != null && args.length > 0 && args[0] != null) state.put("displayName", args[0]);
-                    else state.remove("displayName");
-                    return null;
-                }
-                if ("hasLore".equals(name)) return state.containsKey("lore");
-                if ("getLore".equals(name)) return state.get("lore");
-                if ("setLore".equals(name)) {
-                    if (args != null && args.length > 0 && args[0] != null) state.put("lore", args[0]);
-                    else state.remove("lore");
-                    return null;
-                }
-                if ("clone".equals(name)) return createMeta();
-                if ("equals".equals(name)) {
-                    if (args != null && args.length > 0) return proxy == args[0];
-                    return false;
-                }
-                Class<?> returnType = method.getReturnType();
-                if (returnType == boolean.class) return false;
-                if (returnType == int.class) return 0;
-                if (returnType == long.class) return 0L;
-                if (returnType == double.class || returnType == float.class) return 0.0;
-                return null;
-            }
-        );
+    private static boolean metaEquals(ItemMeta first, ItemMeta second) {
+        PatchBukkitItemMeta a = PatchBukkitItemMeta.handler(first);
+        PatchBukkitItemMeta b = PatchBukkitItemMeta.handler(second);
+        boolean aEmpty = a == null || a.isEmpty();
+        boolean bEmpty = b == null || b.isEmpty();
+        if (aEmpty || bEmpty) {
+            return aEmpty == bEmpty;
+        }
+        return first.equals(second);
     }
 }
