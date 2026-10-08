@@ -38,9 +38,21 @@ public class PatchBukkitScheduler implements BukkitScheduler {
     private final Map<Integer, ScheduledFuture<?>> futures = new ConcurrentHashMap<>();
     private final Map<Integer, Plugin> owners = new ConcurrentHashMap<>();
 
-    private BukkitTask submit(Plugin plugin, Runnable task, long delayTicks, long periodTicks) {
+    private static final java.util.logging.Logger LOGGER = java.util.logging.Logger.getLogger("PatchBukkitScheduler");
+
+    private BukkitTask submit(Plugin plugin, Runnable work, long delayTicks, long periodTicks) {
         int id = nextId.getAndIncrement();
         long delayMs = Math.max(0, delayTicks) * MS_PER_TICK;
+        // The executor keeps a failed task's exception inside its Future, where nothing reads it,
+        // so a plugin task that throws would fail silently. Log it instead.
+        Runnable task = () -> {
+            try {
+                work.run();
+            } catch (Throwable t) {
+                LOGGER.log(java.util.logging.Level.SEVERE,
+                    "[PatchBukkit] Scheduled task of plugin " + plugin.getName() + " threw an exception", t);
+            }
+        };
         ScheduledFuture<?> future;
         if (periodTicks > 0) {
             future = executor.scheduleAtFixedRate(task, delayMs, periodTicks * MS_PER_TICK, TimeUnit.MILLISECONDS);
