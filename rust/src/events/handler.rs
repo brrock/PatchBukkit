@@ -3229,6 +3229,10 @@ impl PatchBukkitEvent for pumpkin::plugin::player::player_chat::PlayerChatEvent 
             _ => return Some(()),
         };
         self.message = message;
+        if pumpkin::plugin::Cancellable::cancelled(self) {
+            // A plugin cancelled the chat (e.g. a muted player): deliver nothing.
+            return Some(());
+        }
         if format.is_empty() {
             // No plugin re-rendered the line: Pumpkin's normal chat format applies.
             return Some(());

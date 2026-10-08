@@ -220,6 +220,7 @@ public class PatchBukkitPluginManager implements PluginManager {
             return;
         }
         if (!plugin.isEnabled()) {
+            registerDescriptionPermissions(plugin);
             try {
                 if (plugin instanceof org.bukkit.plugin.java.JavaPlugin javaPlugin) {
                     javaPlugin.setEnabled(true);
@@ -230,6 +231,35 @@ public class PatchBukkitPluginManager implements PluginManager {
                 }
             } catch (Throwable ex) {
                 server.getLogger().log(Level.SEVERE, "Error enabling " + plugin.getName() + " (Is it up to date?)", ex);
+            }
+        }
+    }
+
+    /**
+     * Registers the permissions a plugin declares in plugin.yml, as CraftServer does
+     * before enabling it. Without them every undeclared node falls back to "op", so
+     * ops wrongly held nodes such as essentials.mute.exempt (default: false).
+     */
+    private void registerDescriptionPermissions(@NotNull Plugin plugin) {
+        java.util.List<Permission> perms;
+        try {
+            perms = plugin.getDescription().getPermissions();
+        } catch (Throwable t) {
+            return;
+        }
+        boolean added = false;
+        for (Permission perm : perms) {
+            if (this.permissionManager.getPermission(perm.getName()) != null) continue;
+            try {
+                this.permissionManager.addPermissions(java.util.List.of(perm));
+                added = true;
+            } catch (IllegalArgumentException ignored) {
+                // already defined
+            }
+        }
+        if (added) {
+            for (org.bukkit.entity.Player p : server.getOnlinePlayers()) {
+                p.recalculatePermissions();
             }
         }
     }
