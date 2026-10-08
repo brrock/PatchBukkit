@@ -27,6 +27,10 @@ public class PatchBukkitPluginClassLoader
     implements ConfiguredPluginClassLoader
 {
 
+    /** Packages under this prefix are defined per plugin; see {@link #definePluginScopedClass}. */
+    private static final String PLUGIN_SCOPED_COMPAT_PREFIX = "org.patchbukkit.compat.";
+
+
     private static final Logger LOGGER = Logger.getLogger("PatchBukkitPluginClassLoader");
     private final PluginDescriptionFile description;
     private final File dataFolder;
@@ -306,6 +310,10 @@ public class PatchBukkitPluginClassLoader
             // First, check if already loaded
             Class<?> c = findLoadedClass(name);
 
+            if (c == null && name.startsWith(PLUGIN_SCOPED_COMPAT_PREFIX)) {
+                c = definePluginScopedClass(name);
+            }
+
             if (c == null) {
                 // For plugin-specific classes, try to load from JAR first (child-first)
                 // For JDK and server classes, delegate to parent
@@ -373,6 +381,23 @@ public class PatchBukkitPluginClassLoader
                 resolveClass(c);
             }
             return c;
+        }
+    }
+
+    /**
+     * Defines a PatchBukkit compat class (shipped in patchbukkit.jar, compiled against a plugin's
+     * own API) in this plugin's loader, so it can link against the plugin's classes.
+     */
+    private Class<?> definePluginScopedClass(String name) throws ClassNotFoundException {
+        String path = name.replace('.', '/').concat(".class");
+        try (InputStream is = getParent().getResourceAsStream(path)) {
+            if (is == null) {
+                throw new ClassNotFoundException(name);
+            }
+            byte[] bytes = is.readAllBytes();
+            return defineClass(name, bytes, 0, bytes.length, (java.security.CodeSource) null);
+        } catch (IOException e) {
+            throw new ClassNotFoundException(name, e);
         }
     }
 

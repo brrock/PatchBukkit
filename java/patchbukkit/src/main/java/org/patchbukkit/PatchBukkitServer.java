@@ -164,8 +164,14 @@ public class PatchBukkitServer implements Server {
     private static final Logger logger = Logger.getLogger("Minecraft");
     private static volatile PatchBukkitServer INSTANCE;
 
+    /** WorldEdit's own adapters need CraftBukkit internals; this one runs on PatchBukkit's API. */
+    private static final String WORLDEDIT_ADAPTER = "org.patchbukkit.compat.worldedit.PatchBukkitWorldEditAdapter";
+
     public PatchBukkitServer() {
         INSTANCE = this;
+        if (System.getProperty("worldedit.bukkit.adapter") == null) {
+            System.setProperty("worldedit.bukkit.adapter", WORLDEDIT_ADAPTER);
+        }
         try {
             this.serverName = io.papermc.paper.ServerBuildInfo.buildInfo().brandName();
         } catch (Throwable ignored) {}
