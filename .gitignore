@@ -56,7 +56,7 @@ logs/
 crash-reports/
 
 # Runtime and Test directories / artifacts
-patchbukkit/
+/patchbukkit/
 patchbukkit-plugins/
 patchbukkit-libs/
 run/
