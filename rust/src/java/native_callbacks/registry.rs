@@ -69,6 +69,8 @@ pub fn ffi_native_bridge_get_tags_impl(request: GetTagsRequest) -> Option<GetTag
             .collect()
     };
     Some(GetTagsResponse { tags })
+}
+
 fn has_component(item: &Item, component: DataComponent) -> bool {
     item.components.iter().any(|(id, _)| *id == component)
 }
