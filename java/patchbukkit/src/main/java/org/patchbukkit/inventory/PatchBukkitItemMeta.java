@@ -5,26 +5,7 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Material;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.inventory.ItemFlag;
-import org.bukkit.inventory.meta.ArmorMeta;
-import org.bukkit.inventory.meta.BannerMeta;
-import org.bukkit.inventory.meta.BlockStateMeta;
-import org.bukkit.inventory.meta.BookMeta;
-import org.bukkit.inventory.meta.BundleMeta;
-import org.bukkit.inventory.meta.ColorableArmorMeta;
-import org.bukkit.inventory.meta.CompassMeta;
-import org.bukkit.inventory.meta.CrossbowMeta;
-import org.bukkit.inventory.meta.Damageable;
-import org.bukkit.inventory.meta.EnchantmentStorageMeta;
-import org.bukkit.inventory.meta.FireworkEffectMeta;
-import org.bukkit.inventory.meta.FireworkMeta;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.inventory.meta.LeatherArmorMeta;
-import org.bukkit.inventory.meta.MapMeta;
-import org.bukkit.inventory.meta.PotionMeta;
-import org.bukkit.inventory.meta.Repairable;
-import org.bukkit.inventory.meta.SkullMeta;
-import org.bukkit.inventory.meta.SuspiciousStewMeta;
-import org.bukkit.inventory.meta.WritableBookMeta;
 import org.patchbukkit.persistence.PatchBukkitPersistentDataContainer;
 
 import java.lang.reflect.InvocationHandler;
@@ -100,7 +81,7 @@ public final class PatchBukkitItemMeta implements InvocationHandler {
     }
 
     private static ItemMeta newProxy(PatchBukkitItemMeta handler) {
-        return (ItemMeta) Proxy.newProxyInstance(ItemMeta.class.getClassLoader(), handler.interfaces, handler);
+        return (ItemMeta) Proxy.newProxyInstance(PatchBukkitItemMeta.class.getClassLoader(), handler.interfaces, handler);
     }
 
     private PatchBukkitItemMeta copyFor(Material target) {
@@ -124,41 +105,38 @@ public final class PatchBukkitItemMeta implements InvocationHandler {
         return copy;
     }
 
-    // Mirrors CraftItemMetas: which meta type Paper hands out for a material.
+    // Mirrors CraftItemMetas: which meta type Paper hands out for a material. Every item gets
+    // Damageable and Repairable, plus its material specific sub-interface.
     private static Class<?>[] interfacesFor(Material material) {
-        List<Class<?>> types = new ArrayList<>();
-        types.add(ItemMeta.class);
-        types.add(Damageable.class);
-        types.add(Repairable.class);
         String name = material.name();
-        switch (name) {
-            case "PLAYER_HEAD", "PLAYER_WALL_HEAD" -> types.add(SkullMeta.class);
-            case "WRITTEN_BOOK" -> types.add(BookMeta.class);
-            case "WRITABLE_BOOK" -> types.add(WritableBookMeta.class);
-            case "ENCHANTED_BOOK" -> types.add(EnchantmentStorageMeta.class);
-            case "FIREWORK_ROCKET" -> types.add(FireworkMeta.class);
-            case "FIREWORK_STAR" -> types.add(FireworkEffectMeta.class);
-            case "POTION", "SPLASH_POTION", "LINGERING_POTION", "TIPPED_ARROW" -> types.add(PotionMeta.class);
-            case "FILLED_MAP" -> types.add(MapMeta.class);
-            case "COMPASS" -> types.add(CompassMeta.class);
-            case "CROSSBOW" -> types.add(CrossbowMeta.class);
-            case "SUSPICIOUS_STEW" -> types.add(SuspiciousStewMeta.class);
-            case "BUNDLE" -> types.add(BundleMeta.class);
+        Class<?> specific = switch (name) {
+            case "PLAYER_HEAD", "PLAYER_WALL_HEAD" -> PatchBukkitMetaTypes.Skull.class;
+            case "WRITTEN_BOOK" -> PatchBukkitMetaTypes.Book.class;
+            case "WRITABLE_BOOK" -> PatchBukkitMetaTypes.WritableBook.class;
+            case "ENCHANTED_BOOK" -> PatchBukkitMetaTypes.EnchantmentStorage.class;
+            case "FIREWORK_ROCKET" -> PatchBukkitMetaTypes.Firework.class;
+            case "FIREWORK_STAR" -> PatchBukkitMetaTypes.FireworkEffect.class;
+            case "POTION", "SPLASH_POTION", "LINGERING_POTION", "TIPPED_ARROW" -> PatchBukkitMetaTypes.Potion.class;
+            case "FILLED_MAP" -> PatchBukkitMetaTypes.Map.class;
+            case "COMPASS" -> PatchBukkitMetaTypes.Compass.class;
+            case "CROSSBOW" -> PatchBukkitMetaTypes.Crossbow.class;
+            case "SUSPICIOUS_STEW" -> PatchBukkitMetaTypes.SuspiciousStew.class;
+            case "BUNDLE" -> PatchBukkitMetaTypes.Bundle.class;
             default -> {
                 if (name.endsWith("_BANNER")) {
-                    types.add(BannerMeta.class);
+                    yield PatchBukkitMetaTypes.Banner.class;
                 } else if (name.startsWith("LEATHER_") && isArmor(name) || name.equals("WOLF_ARMOR")) {
-                    types.add(ColorableArmorMeta.class);
-                    types.add(LeatherArmorMeta.class);
+                    yield PatchBukkitMetaTypes.LeatherArmor.class;
                 } else if (isArmor(name)) {
-                    types.add(ArmorMeta.class);
+                    yield PatchBukkitMetaTypes.Armor.class;
                 } else if (name.endsWith("SHULKER_BOX") || name.endsWith("_SIGN") || name.equals("CHEST")
                     || name.equals("BARREL") || name.equals("FURNACE") || name.equals("SPAWNER")) {
-                    types.add(BlockStateMeta.class);
+                    yield PatchBukkitMetaTypes.BlockState.class;
                 }
+                yield PatchBukkitMetaTypes.DamageableRepairable.class;
             }
-        }
-        return types.toArray(new Class<?>[0]);
+        };
+        return new Class<?>[] { specific };
     }
 
     private static boolean isArmor(String name) {
