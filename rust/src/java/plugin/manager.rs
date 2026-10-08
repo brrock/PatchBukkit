@@ -324,6 +324,17 @@ impl PluginManager {
         Ok(())
     }
 
+    /// Runs the scheduler's sync tasks that came due this tick (PatchBukkitScheduler.drainSyncTasks).
+    pub fn run_sync_tasks(&mut self, env: &mut Env) -> Result<()> {
+        env.call_static_method(
+            jni::jni_str!("org/patchbukkit/scheduler/PatchBukkitScheduler"),
+            jni::jni_str!("drainSyncTasks"),
+            jni::jni_sig!("()V"),
+            &[],
+        )?;
+        Ok(())
+    }
+
     pub fn instantiate_all_plugins(
         &mut self,
         env: &mut Env,

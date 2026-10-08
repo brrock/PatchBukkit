@@ -150,6 +150,15 @@ impl JvmWorker {
 
                     let _ = respond_to.send(res);
                 }
+                JvmCommand::RunSyncTasks => {
+                    if let Some(ref jvm) = self.jvm {
+                        if let Err(e) = jvm.attach_current_thread(|env| -> anyhow::Result<()> {
+                            self.plugin_manager.run_sync_tasks(env)
+                        }) {
+                            tracing::error!("Failed to run scheduled sync tasks: {e}");
+                        }
+                    }
+                }
                 JvmCommand::Shutdown { respond_to } => {
                     let _ = respond_to.send(self.plugin_manager.unload_all_plugins());
                     break;

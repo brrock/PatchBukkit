@@ -46,6 +46,14 @@ pub async fn on_load_inner(plugin: &PatchBukkitPlugin, server: Arc<Context>) -> 
 
     let runtime_handle = plugin.runtime.handle().clone();
     let command_tx = plugin.command_tx.clone();
+
+    // Run the scheduler's sync tasks on every server tick.
+    server.register_event::<pumpkin::plugin::server::server_tick_start::ServerTickStartEvent, _>(
+        Arc::new(crate::events::handler::SyncTaskTickHandler::new(command_tx.clone())),
+        pumpkin::plugin::EventPriority::Normal,
+        false,
+    );
+
     let server_clone = server;
 
     // Run JVM initialization and Java plugin bootstrap in a background task

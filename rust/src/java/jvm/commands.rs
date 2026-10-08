@@ -45,6 +45,8 @@ pub enum JvmCommand {
     DisableAllPlugins {
         respond_to: oneshot::Sender<Result<()>>,
     },
+    /// Runs the Java scheduler's sync tasks that came due on this server tick.
+    RunSyncTasks,
     Shutdown {
         respond_to: oneshot::Sender<Result<()>>,
     },

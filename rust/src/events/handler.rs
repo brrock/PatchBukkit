@@ -6677,3 +6677,26 @@ where
         })
     }
 }
+
+/// Pumpkin tick handler that asks the JVM worker to run the scheduler's sync tasks due this tick.
+pub struct SyncTaskTickHandler {
+    command_tx: mpsc::Sender<JvmCommand>,
+}
+
+impl SyncTaskTickHandler {
+    #[must_use]
+    pub const fn new(command_tx: mpsc::Sender<JvmCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl<E> EventHandler<E> for SyncTaskTickHandler
+where
+    E: Payload + 'static,
+{
+    fn handle<'a>(&'a self, _server: &'a Arc<Server>, _event: &'a E) -> BoxFuture<'a, ()> {
+        // try_send never waits on the tick; a full queue defers the drain to the next tick.
+        let _ = self.command_tx.try_send(JvmCommand::RunSyncTasks);
+        Box::pin(async {})
+    }
+}
