@@ -61,7 +61,7 @@ public class PatchBukkitRegistryAccess extends io.papermc.paper.registry.PaperRe
     public <T extends Keyed> Registry<T> getRegistry(RegistryKey<T> registryKey) {
         if (registryKey == null) return null;
 
-        if (!FACTORIES.containsKey(registryKey) && !RegistryKey.ITEM.equals(registryKey) && !RegistryKey.BLOCK.equals(registryKey) && !RegistryKey.DAMAGE_TYPE.equals(registryKey)) {
+        if (!FACTORIES.containsKey(registryKey) && !RegistryKey.ITEM.equals(registryKey) && !RegistryKey.BLOCK.equals(registryKey) && !RegistryKey.DAMAGE_TYPE.equals(registryKey) && !RegistryKey.ENCHANTMENT.equals(registryKey)) {
             try {
                 Registry<T> superReg = super.getRegistry(registryKey);
                 if (superReg != null) {
