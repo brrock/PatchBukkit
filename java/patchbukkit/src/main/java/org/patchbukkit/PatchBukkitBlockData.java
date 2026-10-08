@@ -11,6 +11,23 @@ public final class PatchBukkitBlockData {
 
     private PatchBukkitBlockData() {}
 
+    /**
+     * Paper's {@code getAsString()} lists every property, using the default state's value for
+     * the ones that weren't given.
+     */
+    private static String withAllProperties(String stateData) {
+        try {
+            org.patchbukkit.world.BlockStateRegistry registry = org.patchbukkit.world.BlockStateRegistry.get();
+            int id = registry.toId(stateData);
+            if (id >= 0) {
+                return registry.toString(id);
+            }
+        } catch (Throwable ignored) {
+            // The native bridge isn't up (e.g. unit tests); keep the text as given.
+        }
+        return stateData;
+    }
+
     public static BlockData newData(Material material, BlockType type, String data) {
         final Material mat = material != null ? material : (type != null ? type.asMaterial() : null);
         if (mat == null || mat.isLegacy()) {
@@ -23,7 +40,7 @@ public final class PatchBukkitBlockData {
         // guaranteed ClassNotFoundExceptions costing several microseconds per call on the
         // hottest path in the API (Block#getType() -> createBlockData). Removed.
 
-        final String stateData;
+        String stateData;
         if (data != null && !data.isEmpty()) {
             if (data.startsWith("minecraft:") || data.contains(":")) {
                 stateData = data;
@@ -38,6 +55,8 @@ public final class PatchBukkitBlockData {
         } else {
             stateData = mat.getKey().toString();
         }
+        stateData = withAllProperties(stateData);
+        final String fullStateData = stateData;
 
         return (BlockData) Proxy.newProxyInstance(
                 PatchBukkitBlockData.class.getClassLoader(),
@@ -48,10 +67,10 @@ public final class PatchBukkitBlockData {
                         return mat;
                     }
                     if ("getAsString".equals(name)) {
-                        return stateData;
+                        return fullStateData;
                     }
                     if ("clone".equals(name) || "copy".equals(name)) {
-                        return newData(mat, type, stateData);
+                        return newData(mat, type, fullStateData);
                     }
                     if ("matches".equals(name) && args != null && args.length == 1) {
                         if (args[0] instanceof BlockData other) {
@@ -70,15 +89,15 @@ public final class PatchBukkitBlockData {
                     }
                     if ("equals".equals(name) && args != null && args.length == 1) {
                         if (args[0] instanceof BlockData other) {
-                            return stateData.equals(other.getAsString());
+                            return fullStateData.equals(other.getAsString());
                         }
                         return false;
                     }
                     if ("hashCode".equals(name)) {
-                        return stateData.hashCode();
+                        return fullStateData.hashCode();
                     }
                     if ("toString".equals(name)) {
-                        return stateData;
+                        return fullStateData;
                     }
                     if (method.isDefault()) {
                         return InvocationHandler.invokeDefault(proxy, method, args);

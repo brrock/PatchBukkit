@@ -68,6 +68,19 @@ public class PatchBukkitRegistry<P, B extends Keyed> implements Registry<B> {
         }
     }
 
+    /**
+     * Whether the server has a block with this key. {@code Material.isBlock()} is
+     * {@code Registry.BLOCK.get(key) != null}, so item-only materials must not resolve here.
+     */
+    private static boolean isServerBlock(NamespacedKey key) {
+        try {
+            return org.patchbukkit.world.BlockStateRegistry.get().block(key.toString()) != null;
+        } catch (Throwable t) {
+            // The native bridge isn't up (e.g. unit tests); keep the old permissive behaviour.
+            return true;
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private void initializeInternal() {
         if (registryType != null) {
@@ -114,7 +127,7 @@ public class PatchBukkitRegistry<P, B extends Keyed> implements Registry<B> {
             } else if (RegistryKey.BLOCK.equals(registryKey) || "block".equalsIgnoreCase(registryKey.key().value())) {
                 for (Material mat : Material.values()) {
                     try {
-                        if (!mat.isLegacy() && mat.getKey() != null) {
+                        if (!mat.isLegacy() && mat.getKey() != null && isServerBlock(mat.getKey())) {
                             B blockType = (B) PatchBukkitBlockType.create(mat);
                             if (blockType != null) {
                                 entries.put(mat.getKey(), blockType);
@@ -280,7 +293,7 @@ public class PatchBukkitRegistry<P, B extends Keyed> implements Registry<B> {
                     if (mat != null && mat.isLegacy()) {
                         mat = PatchBukkitLegacy.fromLegacy(mat);
                     }
-                    if (mat != null && !mat.isLegacy()) {
+                    if (mat != null && !mat.isLegacy() && isServerBlock(mat.getKey())) {
                         B blockType = (B) PatchBukkitBlockType.create(mat);
                         if (blockType != null) {
                             entries.put(key, blockType);
