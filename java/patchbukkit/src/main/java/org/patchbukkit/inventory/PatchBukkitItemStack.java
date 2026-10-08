@@ -85,6 +85,45 @@ public class PatchBukkitItemStack extends ItemStack {
         return Objects.hash(type, amount, meta);
     }
 
+    // Paper's ItemStack data accessors delegate to a CraftItemStack that PatchBukkit stacks never
+    // have, so answer the durability components locally (a fresh item) and nothing else.
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <T> @Nullable T getData(io.papermc.paper.datacomponent.DataComponentType.Valued<T> type) {
+        int maxDurability = this.type.getMaxDurability();
+        if (maxDurability <= 0) {
+            return null;
+        }
+        if (type == io.papermc.paper.datacomponent.DataComponentTypes.MAX_DAMAGE) {
+            return (T) Integer.valueOf(maxDurability);
+        }
+        if (type == io.papermc.paper.datacomponent.DataComponentTypes.DAMAGE) {
+            return (T) Integer.valueOf(0);
+        }
+        return null;
+    }
+
+    @Override
+    public <T> T getDataOrDefault(io.papermc.paper.datacomponent.DataComponentType.Valued<? extends T> type, T defaultValue) {
+        @SuppressWarnings("unchecked")
+        T value = getData((io.papermc.paper.datacomponent.DataComponentType.Valued<T>) type);
+        return value != null ? value : defaultValue;
+    }
+
+    @Override
+    public boolean hasData(io.papermc.paper.datacomponent.DataComponentType type) {
+        return type == io.papermc.paper.datacomponent.DataComponentTypes.MAX_DAMAGE
+            || type == io.papermc.paper.datacomponent.DataComponentTypes.DAMAGE
+            ? this.type.getMaxDurability() > 0
+            : false;
+    }
+
+    @Override
+    public java.util.Set<io.papermc.paper.datacomponent.DataComponentType> getDataTypes() {
+        return java.util.Set.of();
+    }
+
     @Override
     public String toString() {
         return "ItemStack{" + type + " x " + amount + "}";
