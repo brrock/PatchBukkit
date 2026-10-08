@@ -126,6 +126,11 @@ public class PatchBukkitRegistry<P, B extends Keyed> implements Registry<B> {
                 // Do not reflectively autoDiscover Sound.class because Sound.<clinit> depends on Registry.SOUNDS!
             } else if (RegistryKey.MENU.equals(registryKey) || "menu".equalsIgnoreCase(registryKey.key().value())) {
                 // Do not reflectively autoDiscover MenuType.class because MenuType.<clinit> depends on Registry.MENU!
+            } else if (RegistryKey.ENCHANTMENT.equals(registryKey)) {
+                // Enchantment.<clinit> depends on this registry, so never reflect on it.
+                for (PatchBukkitEnchantment ench : PatchBukkitEnchantment.createVanilla()) {
+                    entries.put(ench.getKey(), (B) ench);
+                }
             } else if (RegistryKey.DAMAGE_TYPE.equals(registryKey) || "damage_type".equalsIgnoreCase(registryKey.key().value())) {
                 // Do not reflectively autoDiscover DamageType.class because DamageType.<clinit> depends on Registry.DAMAGE_TYPE!
                 populateDefaultDamageTypes();

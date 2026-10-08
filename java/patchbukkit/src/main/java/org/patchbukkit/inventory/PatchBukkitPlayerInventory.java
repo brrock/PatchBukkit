@@ -57,10 +57,17 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
         }
         try {
             String type = item.getType().getKey().toString();
-            return patchbukkit.itemstack.ItemStack.newBuilder()
+            var builder = patchbukkit.itemstack.ItemStack.newBuilder()
                 .setType(type)
-                .setAmount(item.getAmount())
-                .build();
+                .setAmount(item.getAmount());
+            try {
+                for (var e : item.getEnchantments().entrySet()) {
+                    if (e.getKey() != null && e.getValue() != null && e.getValue() > 0) {
+                        builder.putEnchantments(e.getKey().getKey().toString(), e.getValue());
+                    }
+                }
+            } catch (Throwable ignored) {}
+            return builder.build();
         } catch (Throwable ignored) {
             return patchbukkit.itemstack.ItemStack.newBuilder()
                 .setType("minecraft:air")
@@ -77,7 +84,20 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
         if (mat == null || mat == Material.AIR) {
             return new PatchBukkitItemStack(Material.AIR, 0);
         }
-        return new PatchBukkitItemStack(mat, proto.getAmount());
+        PatchBukkitItemStack stack = new PatchBukkitItemStack(mat, proto.getAmount());
+        if (proto.getEnchantmentsCount() > 0) {
+            try {
+                var registry = org.bukkit.Registry.ENCHANTMENT;
+                for (var e : proto.getEnchantmentsMap().entrySet()) {
+                    org.bukkit.NamespacedKey key = org.bukkit.NamespacedKey.fromString(e.getKey());
+                    org.bukkit.enchantments.Enchantment ench = key == null ? null : registry.get(key);
+                    if (ench != null) {
+                        stack.addUnsafeEnchantment(ench, e.getValue());
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
+        return stack;
     }
 
     @Override
