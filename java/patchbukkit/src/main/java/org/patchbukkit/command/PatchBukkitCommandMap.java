@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.bukkit.Location;
 import org.bukkit.Server;
 import org.bukkit.command.Command;
@@ -36,12 +38,23 @@ public class PatchBukkitCommandMap extends SimpleCommandMap {
         return clean.toLowerCase();
     }
 
+    /**
+     * Names commands were registered under, as opposed to the slash variants added for
+     * convenience. An exact name always wins over a variant, so WorldEdit's {@code size} and
+     * {@code /size} (typed as {@code /size} and {@code //size}) stay separate commands.
+     */
+    private final Set<String> exactLabels = new HashSet<>();
+
     private void registerVariants(String key, Command command) {
         if (key == null || key.isEmpty()) return;
         key = key.toLowerCase().trim();
-        if (!knownCommands.containsKey(key)) {
+        if (this.exactLabels.add(key)) {
             knownCommands.put(key, command);
         }
+        registerSlashVariants(key, command);
+    }
+
+    private void registerSlashVariants(String key, Command command) {
         String clean = cleanLabel(key);
         if (!clean.isEmpty()) {
             if (!knownCommands.containsKey(clean)) {
@@ -84,8 +97,8 @@ public class PatchBukkitCommandMap extends SimpleCommandMap {
         registerVariants(label, command);
         registerVariants(fallbackPrefix + ":" + label, command);
         if (!clean.isEmpty()) {
-            registerVariants(clean, command);
-            registerVariants(fallbackPrefix + ":" + clean, command);
+            registerSlashVariants(clean, command);
+            registerSlashVariants(fallbackPrefix + ":" + clean, command);
         }
 
         if (command.getAliases() != null) {
@@ -130,11 +143,18 @@ public class PatchBukkitCommandMap extends SimpleCommandMap {
         if (split.length == 0) return false;
 
         String rawLabel = split[0].toLowerCase();
-        Command command = knownCommands.get(rawLabel);
+        String matchedLabel = rawLabel;
+        Command command = knownCommands.get(matchedLabel);
+
+        if (command == null && rawLabel.startsWith("/")) {
+            // Callers often include the chat slash: "/fly" means "fly", "//pos1" means "/pos1".
+            matchedLabel = rawLabel.substring(1);
+            command = knownCommands.get(matchedLabel);
+        }
 
         if (command == null) {
-            String clean = cleanLabel(rawLabel);
-            command = knownCommands.get(clean);
+            matchedLabel = cleanLabel(rawLabel);
+            command = knownCommands.get(matchedLabel);
         }
 
         if (command == null) {
@@ -143,7 +163,8 @@ public class PatchBukkitCommandMap extends SimpleCommandMap {
 
         try {
             String[] args = Arrays.copyOfRange(split, 1, split.length);
-            String executedLabel = rawLabel.startsWith("//") ? rawLabel : cleanLabel(rawLabel);
+            // Bukkit passes the alias that was used; a convenience variant isn't one, so fall back to the name.
+            String executedLabel = this.exactLabels.contains(matchedLabel) ? matchedLabel : command.getName().toLowerCase();
             return command.execute(sender, executedLabel, args);
         } catch (Exception ex) {
             throw new CommandException("Unhandled exception executing '" + cmdLine + "'", ex);
@@ -206,6 +227,7 @@ public class PatchBukkitCommandMap extends SimpleCommandMap {
     @Override
     public void clearCommands() {
         knownCommands.clear();
+        this.exactLabels.clear();
     }
 
     @Override
