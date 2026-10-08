@@ -28,6 +28,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -2217,7 +2218,11 @@ public class PatchBukkitServer implements Server {
         return PatchBukkitBlockData.newData(material, type, data);
     }
 
+    /** Tags handed out so far, per Bukkit tag registry ("blocks", "items", ...), in creation order. */
+    private final Map<String, Map<NamespacedKey, Tag<?>>> tagsByRegistry = new ConcurrentHashMap<>();
+
     @Override
+    @SuppressWarnings("unchecked")
     public <T extends Keyed> @Nullable Tag<T> getTag(
         @NotNull String registry,
         @NotNull NamespacedKey tag,
@@ -2226,36 +2231,29 @@ public class PatchBukkitServer implements Server {
         if (registry == null || tag == null || clazz == null) {
             return null;
         }
-        try {
-            for (java.lang.reflect.Field field : Tag.class.getFields()) {
-                if (Tag.class.isAssignableFrom(field.getType())) {
-                    Tag<?> val = (Tag<?>) field.get(null);
-                    if (val != null && val.getKey().equals(tag)) {
-                        return (Tag<T>) val;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
-        return new org.patchbukkit.tag.PatchBukkitTag<>(tag);
+        // Block and item tags share keys (minecraft:logs is both), so tags are kept per registry.
+        Map<NamespacedKey, Tag<?>> tags = tagsByRegistry.computeIfAbsent(
+            registry, r -> java.util.Collections.synchronizedMap(new LinkedHashMap<>()));
+        return (Tag<T>) tags.computeIfAbsent(tag, k -> new org.patchbukkit.tag.PatchBukkitTag<T>(k));
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public <T extends Keyed> @NotNull Iterable<Tag<T>> getTags(
         @NotNull String registry,
         @NotNull Class<T> clazz
     ) {
-        List<Tag<T>> result = new ArrayList<>();
+        // The Tag constants are created through getTag, so make sure they exist.
         try {
-            for (java.lang.reflect.Field field : Tag.class.getFields()) {
-                if (Tag.class.isAssignableFrom(field.getType())) {
-                    Tag<?> val = (Tag<?>) field.get(null);
-                    if (val != null) {
-                        result.add((Tag<T>) val);
-                    }
-                }
-            }
+            Class.forName(Tag.class.getName(), true, Tag.class.getClassLoader());
         } catch (Throwable ignored) {}
-        return result;
+        Map<NamespacedKey, Tag<?>> tags = tagsByRegistry.get(registry);
+        if (tags == null) {
+            return List.of();
+        }
+        synchronized (tags) {
+            return (List<Tag<T>>) (List<?>) new ArrayList<>(tags.values());
+        }
     }
 
     @Override
