@@ -6576,6 +6576,32 @@ impl PatchBukkitEvent
     }
 }
 
+/// True on the JVM worker thread. Bukkit code running there (a command, a scheduled
+/// task) can make Pumpkin fire an event, e.g. `openInventory` firing `InventoryOpenEvent`.
+/// Queuing that event for the worker would wait on the thread that is waiting for us,
+/// so such events are fired into the JVM inline instead.
+fn on_jvm_worker_thread() -> bool {
+    std::thread::current().name() == Some("patchbukkit-jvm-worker")
+}
+
+/// Fires an event straight into the JVM from the worker thread (see [`on_jvm_worker_thread`]).
+fn fire_inline(
+    payload: JvmEventPayload,
+    plugin: String,
+) -> Option<crate::proto::patchbukkit::events::FireEventResponse> {
+    let jvm = jni::JavaVM::singleton().ok()?;
+    let manager = crate::java::plugin::event_manager::EventManager::new();
+    match jvm.attach_current_thread(|env| -> anyhow::Result<_> {
+        manager.fire_event(env, payload, plugin)
+    }) {
+        Ok(resp) => Some(resp),
+        Err(e) => {
+            tracing::error!("Failed to fire event inline: {e}");
+            None
+        }
+    }
+}
+
 pub struct PatchBukkitEventHandler<E: PatchBukkitEvent> {
     plugin_name: String,
     command_tx: mpsc::Sender<JvmCommand>,
@@ -6602,6 +6628,11 @@ where
         let payload = event.to_payload(server.clone());
         if let Some(player) = &payload.context.player {
             crate::java::native_callbacks::utils::cache_player(player.clone());
+        }
+
+        if on_jvm_worker_thread() {
+            fire_inline(payload, self.plugin_name.clone());
+            return Box::pin(async {});
         }
 
         Box::pin(async move {
@@ -6639,6 +6670,16 @@ where
         let payload = event.to_payload(server.clone());
         if let Some(player) = &payload.context.player {
             crate::java::native_callbacks::utils::cache_player(player.clone());
+        }
+
+        if on_jvm_worker_thread() {
+            if let Some(response) = fire_inline(payload, self.plugin_name.clone()) {
+                event.set_cancelled(response.cancelled);
+                if let Some(event_data) = response.data.and_then(|d| d.data) {
+                    let _ = event.apply_modifications(server, event_data);
+                }
+            }
+            return Box::pin(async {});
         }
 
         Box::pin(async move {
