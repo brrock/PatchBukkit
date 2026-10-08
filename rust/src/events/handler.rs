@@ -2680,6 +2680,7 @@ impl PatchBukkitEvent for pumpkin::plugin::player::async_player_chat::AsyncPlaye
                     }),
                     message: self.message.clone(),
                     format: serde_json::to_string(&self.format).unwrap_or_default(),
+                    recipients_uuids: Vec::new(),
                 })),
             },
             context: EventContext {
@@ -3211,6 +3212,32 @@ impl PatchBukkitEvent for pumpkin::plugin::player::player_channel::PlayerChannel
 }
 
 impl PatchBukkitEvent for pumpkin::plugin::player::player_chat::PlayerChatEvent {
+    fn apply_modifications(&mut self, server: &Arc<Server>, data: Data) -> Option<()> {
+        let (message, format, recipients) = match data {
+            Data::PlayerChat(e) => (e.message, String::new(), e.recipients_uuids),
+            Data::AsyncPlayerChat(e) => (e.message, e.format, e.recipients_uuids),
+            _ => return Some(()),
+        };
+        self.message = message;
+        if format.is_empty() {
+            // No plugin re-rendered the line: Pumpkin's normal chat format applies.
+            return Some(());
+        }
+        // Pumpkin's broadcast ignores any plugin-provided format, so suppress it and deliver
+        // the rendered line to exactly the recipients the JVM side left in the event.
+        pumpkin::plugin::Cancellable::set_cancelled(self, true);
+        let line = pumpkin_util::text::TextComponent::from_legacy_string(&format);
+        let targets: Vec<Arc<pumpkin::entity::player::Player>> = recipients
+            .iter()
+            .filter_map(|u| uuid::Uuid::parse_str(&u.value).ok())
+            .filter_map(|id| server.get_player_by_uuid(id))
+            .collect();
+        for player in targets {
+            player.send_system_message(&line);
+        }
+        Some(())
+    }
+
     fn to_payload(&self, server: Arc<Server>) -> JvmEventPayload {
         JvmEventPayload {
             event: Event {

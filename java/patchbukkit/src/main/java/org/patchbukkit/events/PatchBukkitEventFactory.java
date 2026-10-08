@@ -1,8 +1,12 @@
 package org.patchbukkit.events;
 
 import com.google.protobuf.InvalidProtocolBufferException;
+import io.papermc.paper.chat.ChatRenderer;
+import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -38,10 +42,110 @@ public class PatchBukkitEventFactory {
         if (event == null) {
             return FireEventResponse.newBuilder().setCancelled(false).build().toByteArray();
         }
+        if (event instanceof org.bukkit.event.player.AsyncPlayerChatEvent chat) {
+            return fireChatEvent(chat, pluginName);
+        }
         if (Bukkit.getServer() instanceof org.patchbukkit.PatchBukkitServer server) {
             server.getEventManager().fireEvent(event, pluginName);
         }
         return toFireEventResponse(event);
+    }
+
+    /**
+     * Fires a Pumpkin chat message to both the legacy AsyncPlayerChatEvent and Paper's
+     * AsyncChatEvent listeners of one plugin, then returns the edits they made: the message,
+     * the rendered line (only when a format or renderer was changed or the recipients were
+     * narrowed) and the recipients. Pumpkin never fires either event itself.
+     */
+    private static byte[] fireChatEvent(@NotNull org.bukkit.event.player.AsyncPlayerChatEvent legacy, @NotNull String pluginName) {
+        if (!(Bukkit.getServer() instanceof org.patchbukkit.PatchBukkitServer server)) {
+            return FireEventResponse.newBuilder().setCancelled(false).build().toByteArray();
+        }
+        org.bukkit.entity.Player sender = legacy.getPlayer();
+        String originalMessage = legacy.getMessage();
+        server.getEventManager().fireEvent(legacy, pluginName);
+
+        io.papermc.paper.event.player.AsyncChatEvent paper = null;
+        ChatRenderer defaultRenderer = ChatRenderer.defaultRenderer();
+        try {
+            Component original = Component.text(originalMessage);
+            // Pumpkin dispatches chat on the primary thread, so the events are synchronous; Essentials
+            // derives its follow-up chat event's async flag from these and cannot fire it otherwise.
+            paper = new io.papermc.paper.event.player.AsyncChatEvent(
+                false, sender, new java.util.HashSet<Audience>(legacy.getRecipients()),
+                defaultRenderer, original, original, null);
+            server.getEventManager().fireEvent(paper, pluginName);
+        } catch (Throwable t) {
+            LOGGER.log(Level.WARNING, "Could not fire Paper AsyncChatEvent for chat from " + sender.getName(), t);
+            paper = null;
+        }
+
+        boolean cancelled = legacy.isCancelled() || (paper != null && paper.isCancelled());
+
+        String message = legacy.getMessage();
+        if (paper != null) {
+            String paperMessage = PlainTextComponentSerializer.plainText().serialize(paper.message());
+            if (!paperMessage.equals(originalMessage)) {
+                message = paperMessage;
+            }
+        }
+
+        String rendered = "";
+        if (paper != null && !defaultRenderer.equals(paper.renderer())) {
+            try {
+                Component line = paper.renderer().render(sender, Component.text(sender.getDisplayName()), Component.text(message), sender);
+                rendered = LegacyComponentSerializer.legacySection().serialize(line);
+            } catch (RuntimeException e) {
+                LOGGER.log(Level.WARNING, "Paper chat renderer failed; using Pumpkin's default format", e);
+            }
+        } else if (!BUKKIT_DEFAULT_CHAT_FORMAT.equals(legacy.getFormat())) {
+            rendered = formatChatLine(legacy.getFormat(), sender, message);
+        }
+
+        java.util.Set<String> recipients = new java.util.LinkedHashSet<>();
+        for (Player p : legacy.getRecipients()) {
+            recipients.add(p.getUniqueId().toString());
+        }
+        if (paper != null) {
+            java.util.Set<String> paperViewers = new java.util.HashSet<>();
+            for (Audience a : paper.viewers()) {
+                if (a instanceof Player p) paperViewers.add(p.getUniqueId().toString());
+            }
+            recipients.retainAll(paperViewers);
+        }
+        boolean everyoneOnline = true;
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (!recipients.contains(p.getUniqueId().toString())) {
+                everyoneOnline = false;
+                break;
+            }
+        }
+        if (rendered.isEmpty() && !everyoneOnline) {
+            // Pumpkin's broadcast ignores recipients, so a narrowed audience needs our own line.
+            rendered = formatChatLine(BUKKIT_DEFAULT_CHAT_FORMAT, sender, message);
+        }
+
+        var chatData = patchbukkit.events.AsyncPlayerChatEvent.newBuilder()
+            .setPlayerUuid(UUID.newBuilder().setValue(sender.getUniqueId().toString()))
+            .setMessage(message)
+            .setFormat(rendered);
+        for (String recipient : recipients) {
+            chatData.addRecipientsUuids(UUID.newBuilder().setValue(recipient));
+        }
+        return FireEventResponse.newBuilder()
+            .setCancelled(cancelled)
+            .setData(Event.newBuilder().setAsyncPlayerChat(chatData))
+            .build()
+            .toByteArray();
+    }
+
+    private static String formatChatLine(String format, Player sender, String message) {
+        try {
+            return String.format(format, sender.getDisplayName(), message);
+        } catch (RuntimeException e) {
+            LOGGER.log(Level.WARNING, "Invalid chat format from plugin, sending it unrendered", e);
+            return format;
+        }
     }
 
     @Nullable
@@ -528,7 +632,7 @@ public class PatchBukkitEventFactory {
                 var ev = event.getAsyncPlayerChat();
                 Player player = getPlayer(ev.getPlayerUuid().getValue());
                 if (player == null) yield null;
-                yield new org.bukkit.event.player.AsyncPlayerChatEvent(true, player, ev.getMessage(), new java.util.HashSet<>(Bukkit.getOnlinePlayers()));
+                yield new org.bukkit.event.player.AsyncPlayerChatEvent(false, player, ev.getMessage(), new java.util.HashSet<>(Bukkit.getOnlinePlayers()));
             }
             case ASYNC_PLAYER_PRE_LOGIN -> {
                 var ev = event.getAsyncPlayerPreLogin();
@@ -608,7 +712,7 @@ public class PatchBukkitEventFactory {
                 var ev = event.getPlayerChat();
                 Player player = getPlayer(ev.getPlayerUuid().getValue());
                 if (player == null) yield null;
-                yield new org.bukkit.event.player.AsyncPlayerChatEvent(true, player, ev.getMessage(), new java.util.HashSet<>(Bukkit.getOnlinePlayers()));
+                yield new org.bukkit.event.player.AsyncPlayerChatEvent(false, player, ev.getMessage(), new java.util.HashSet<>(Bukkit.getOnlinePlayers()));
             }
             case PLAYER_COMMAND_PREPROCESS -> {
                 var ev = event.getPlayerCommandPreprocess();
@@ -1208,6 +1312,8 @@ public class PatchBukkitEventFactory {
             return null;
         }
     }
+
+    private static final String BUKKIT_DEFAULT_CHAT_FORMAT = "<%1$s> %2$s";
 
     @NotNull
     public static byte[] toFireEventResponse(@NotNull org.bukkit.event.Event event) {

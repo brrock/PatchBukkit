@@ -12,6 +12,10 @@ use crate::proto::patchbukkit::events::{
 static REGISTERED_EVENTS: LazyLock<Mutex<HashSet<(String, String)>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
+/// Plugins that already have the chat handler. Their legacy and Paper chat listeners share it.
+static CHAT_HANDLER_PLUGINS: LazyLock<Mutex<HashSet<String>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
 pub fn ffi_native_bridge_call_event_impl(request: CallEventRequest) -> Option<CallEventResponse> {
     Some(CallEventResponse {
         response: Some(FireEventResponse {
@@ -1553,19 +1557,30 @@ pub fn ffi_native_bridge_register_event_impl(request: RegisterEventRequest) -> O
                     request.blocking,
                 );
         }
-        "org.bukkit.event.player.AsyncPlayerChatEvent" => {
-            plugin_context
-                .register_event::<
-                    pumpkin::plugin::player::async_player_chat::AsyncPlayerChatEvent,
-                    PatchBukkitEventHandler<pumpkin::plugin::player::async_player_chat::AsyncPlayerChatEvent>,
-                >(
-                    Arc::new(PatchBukkitEventHandler::new(
-                        request.plugin_name.clone(),
-                        command_tx.clone(),
-                    )),
-                    pumpkin_priority,
-                    request.blocking,
-                );
+        // Pumpkin's chat path fires its own PlayerChatEvent and never AsyncPlayerChatEvent or
+        // Paper's AsyncChatEvent, so all three Bukkit names are backed by PlayerChatEvent. The JVM
+        // side fires every chat listener of the plugin at once, so one handler per plugin is enough.
+        "org.bukkit.event.player.AsyncPlayerChatEvent"
+        | "org.bukkit.event.player.PlayerChatEvent"
+        | "io.papermc.paper.event.player.AsyncChatEvent" => {
+            if CHAT_HANDLER_PLUGINS
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(request.plugin_name.clone())
+            {
+                plugin_context
+                    .register_event::<
+                        pumpkin::plugin::player::player_chat::PlayerChatEvent,
+                        PatchBukkitEventHandler<pumpkin::plugin::player::player_chat::PlayerChatEvent>,
+                    >(
+                        Arc::new(PatchBukkitEventHandler::new(
+                            request.plugin_name.clone(),
+                            command_tx.clone(),
+                        )),
+                        pumpkin_priority,
+                        request.blocking,
+                    );
+            }
         }
         "org.bukkit.event.player.AsyncPlayerPreLoginEvent" => {
             plugin_context
@@ -1810,20 +1825,6 @@ pub fn ffi_native_bridge_register_event_impl(request: RegisterEventRequest) -> O
                 .register_event::<
                     pumpkin::plugin::player::player_channel::PlayerChannelEvent,
                     PatchBukkitEventHandler<pumpkin::plugin::player::player_channel::PlayerChannelEvent>,
-                >(
-                    Arc::new(PatchBukkitEventHandler::new(
-                        request.plugin_name.clone(),
-                        command_tx.clone(),
-                    )),
-                    pumpkin_priority,
-                    request.blocking,
-                );
-        }
-        "org.bukkit.event.player.PlayerChatEvent" => {
-            plugin_context
-                .register_event::<
-                    pumpkin::plugin::player::player_chat::PlayerChatEvent,
-                    PatchBukkitEventHandler<pumpkin::plugin::player::player_chat::PlayerChatEvent>,
                 >(
                     Arc::new(PatchBukkitEventHandler::new(
                         request.plugin_name.clone(),

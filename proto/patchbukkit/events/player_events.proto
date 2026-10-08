@@ -10,6 +10,7 @@ message AsyncPlayerChatEvent {
   patchbukkit.common.UUID player_uuid = 1;
   string message = 2;
   string format = 3;
+  repeated patchbukkit.common.UUID recipients_uuids = 4;
 }
 
 message AsyncPlayerPreLoginEvent {
