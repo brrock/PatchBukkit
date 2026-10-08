@@ -160,12 +160,10 @@ impl CommandExecutor for JavaCommandExecutor {
 
         // Forward the line as typed: Bukkit commands may be named "size" and "/size" (WorldEdit
         // typed as "/size" and "//size"), and the Java command map tells them apart by label.
-        let typed = context
-            .nodes
-            .first()
-            .and_then(|node| context.input.get(node.range.start..))
-            .map(str::trim)
-            .filter(|line| !line.is_empty());
+        // The whole input is the typed line. The first parsed node is not always the label (for a
+        // command that takes arguments the label node may not be recorded), so slicing from it
+        // drops the label.
+        let typed = Some(context.input.trim()).filter(|line| !line.is_empty());
         let full_command = if let Some(line) = typed {
             line.to_string()
         } else {
