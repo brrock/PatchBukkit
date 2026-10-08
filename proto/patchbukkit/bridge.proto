@@ -131,6 +131,7 @@ service NativeBridge {
   rpc GetForceLoadedChunks(patchbukkit.world.GetForceLoadedChunksRequest) returns (patchbukkit.world.GetForceLoadedChunksResponse);
   rpc SaveWorld(patchbukkit.world.SaveWorldRequest) returns (google.protobuf.Empty);
   rpc GetChunkState(patchbukkit.world.ChunkRequest) returns (patchbukkit.world.ChunkStateResponse);
+  rpc GetBlockDrops(patchbukkit.world.GetBlockDropsRequest) returns (patchbukkit.world.GetBlockDropsResponse);
   rpc LoadChunk(patchbukkit.world.ChunkRequest) returns (patchbukkit.world.ChunkStateResponse);
 
   rpc GetServerInfo(patchbukkit.common.EmptyRequest) returns (patchbukkit.server.ServerInfoResponse);

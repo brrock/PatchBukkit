@@ -4,6 +4,7 @@ package patchbukkit.world;
 
 import "google/protobuf/empty.proto";
 import "patchbukkit/common/types.proto";
+import "patchbukkit/itemstack.proto";
 
 option java_multiple_files = true;
 option java_package = "patchbukkit.world";
@@ -240,4 +241,17 @@ message ChunkRequest {
 message ChunkStateResponse {
   bool loaded = 1;
   bool generated = 2;
+}
+
+message GetBlockDropsRequest {
+  patchbukkit.common.UUID world_uuid = 1;
+  int32 x = 2;
+  int32 y = 3;
+  int32 z = 4;
+  // Unset means "no tool": drops are rolled as if the block broke on its own.
+  patchbukkit.itemstack.ItemStack tool = 5;
+}
+
+message GetBlockDropsResponse {
+  repeated patchbukkit.itemstack.ItemStack drops = 1;
 }

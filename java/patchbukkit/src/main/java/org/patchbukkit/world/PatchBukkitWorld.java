@@ -141,6 +141,43 @@ public class PatchBukkitWorld extends PatchBukkitRegionAccessor implements World
         return instances.computeIfAbsent(uuid, org.patchbukkit.CraftWorld::new);
     }
 
+    private volatile net.minecraft.server.level.ServerLevel detachedHandle;
+
+    /**
+     * CraftWorld#getHandle for plugins whose CraftWorld casts are remapped to this class.
+     * Pumpkin runs no vanilla level, so this is a detached ServerLevel that only carries a
+     * RandomSource: enough for vanilla helpers such as Block#getExpDrop, but any method that
+     * needs real level state will fail.
+     */
+    public net.minecraft.server.level.ServerLevel getHandle() {
+        net.minecraft.server.level.ServerLevel handle = this.detachedHandle;
+        if (handle == null) {
+            synchronized (this) {
+                handle = this.detachedHandle;
+                if (handle == null) {
+                    handle = allocateDetachedLevel();
+                    this.detachedHandle = handle;
+                }
+            }
+        }
+        return handle;
+    }
+
+    @SuppressWarnings({"deprecation", "removal"})
+    private static net.minecraft.server.level.ServerLevel allocateDetachedLevel() {
+        try {
+            java.lang.reflect.Field theUnsafe = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+            theUnsafe.setAccessible(true);
+            sun.misc.Unsafe unsafe = (sun.misc.Unsafe) theUnsafe.get(null);
+            var level = (net.minecraft.server.level.ServerLevel) unsafe.allocateInstance(net.minecraft.server.level.ServerLevel.class);
+            java.lang.reflect.Field random = net.minecraft.world.level.Level.class.getDeclaredField("random");
+            unsafe.putObject(level, unsafe.objectFieldOffset(random), net.minecraft.util.RandomSource.create());
+            return level;
+        } catch (ReflectiveOperationException e) {
+            throw new UnsupportedOperationException("CraftWorld#getHandle is not available on PatchBukkit", e);
+        }
+    }
+
     public static PatchBukkitWorld getOrCreate(String uuid) {
         return getOrCreate(UUID.fromString(uuid));
     }

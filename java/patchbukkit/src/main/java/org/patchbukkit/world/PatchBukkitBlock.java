@@ -54,6 +54,25 @@ public class PatchBukkitBlock implements Block {
         return this.metadataMap;
     }
 
+    // CraftBlock accessors: plugins cast blocks to CraftBlock, which the bytecode transformer
+    // remaps to this class.
+
+    public net.minecraft.core.BlockPos getPosition() {
+        return new net.minecraft.core.BlockPos(this.x, this.y, this.z);
+    }
+
+    public net.minecraft.world.level.block.state.BlockState getNMS() {
+        return NmsBlockStates.at(this.world, this.x, this.y, this.z);
+    }
+
+    public net.minecraft.world.level.LevelAccessor getLevel() {
+        return NmsBlockStates.levelAccessor(this.world);
+    }
+
+    public PatchBukkitWorld getCraftWorld() {
+        return (PatchBukkitWorld) this.world;
+    }
+
     @Override
     public @NotNull World getWorld() {
         return this.world;
@@ -239,7 +258,28 @@ public class PatchBukkitBlock implements Block {
 
     @Override
     public @NotNull Collection<ItemStack> getDrops(@Nullable ItemStack tool, @Nullable Entity entity) {
-        return List.of();
+        var request = patchbukkit.world.GetBlockDropsRequest.newBuilder()
+            .setWorldUuid(org.patchbukkit.bridge.BridgeUtils.convertUuid(this.world.getUID()))
+            .setX(this.x)
+            .setY(this.y)
+            .setZ(this.z);
+        if (tool != null) {
+            request.setTool(org.patchbukkit.inventory.PatchBukkitPlayerInventory.toProto(tool));
+        }
+        try {
+            var response = patchbukkit.bridge.NativeBridgeFfi.getBlockDrops(request.build());
+            if (response == null) return List.of();
+            List<ItemStack> drops = new java.util.ArrayList<>(response.getDropsCount());
+            for (var drop : response.getDropsList()) {
+                ItemStack stack = org.patchbukkit.inventory.PatchBukkitPlayerInventory.fromProto(drop);
+                if (!stack.getType().isAir()) drops.add(stack);
+            }
+            return drops;
+        } catch (Throwable t) {
+            java.util.logging.Logger.getLogger("PatchBukkitBlock")
+                .log(java.util.logging.Level.WARNING, "Failed to roll block drops", t);
+            return List.of();
+        }
     }
 
     @Override

@@ -6,7 +6,7 @@ use crate::{
     proto::patchbukkit::{
         common::{EmptyRequest, Uuid as ProtoUuid},
         world::{
-            ChunkCoordProto, ChunkRequest, ChunkStateResponse, CreateWorldExplosionRequest, EntitySummaryProto, GetBlockDataRequest,
+            ChunkCoordProto, ChunkRequest, ChunkStateResponse, GetBlockDropsRequest, GetBlockDropsResponse, CreateWorldExplosionRequest, EntitySummaryProto, GetBlockDataRequest,
             GetBlockDataResponse, GetForceLoadedChunksRequest, GetForceLoadedChunksResponse,
             GetWorldBorderRequest, GetWorldEntitiesRequest, GetWorldEntitiesResponse,
             GetWorldGamerulesRequest, GetWorldGamerulesResponse, GetWorldInfoRequest,
@@ -712,4 +712,46 @@ pub fn ffi_native_bridge_load_chunk_impl(request: ChunkRequest) -> Option<ChunkS
         },
         CHUNK_LOAD_TIMEOUT,
     )
+}
+
+/// Rolls the block's loot table like Paper's CraftBlock#getDrops: with a tool that cannot
+/// harvest the block there are no drops.
+pub fn ffi_native_bridge_get_block_drops_impl(
+    request: GetBlockDropsRequest,
+) -> Option<GetBlockDropsResponse> {
+    use pumpkin_data::item_stack::ItemStack;
+    let world = find_world_exact(request.world_uuid.as_ref())?;
+    let pos = pumpkin_util::math::position::BlockPos::new(request.x, request.y, request.z);
+    let state = world.get_block_state(&pos);
+    let block = pumpkin_data::Block::from_state_id(state.id);
+
+    let tool = request.tool.as_ref().and_then(|tool| {
+        let item = pumpkin_data::item::Item::from_registry_key(&tool.r#type)?;
+        Some(ItemStack::new(tool.amount.clamp(1, 99) as u8, item))
+    });
+    let empty = Some(GetBlockDropsResponse { drops: Vec::new() });
+    if let Some(tool) = &tool
+        && state.tool_required()
+        && !tool.is_correct_for_drops(block)
+    {
+        return empty;
+    }
+    let Some(loot_table) = world.get_loot_table(&format!("minecraft:blocks/{}", block.name)) else {
+        return empty;
+    };
+    let params = pumpkin::world::loot::LootContextParameters {
+        block_state: Some(state),
+        tool,
+        position: Some(pos.to_f64()),
+        ..Default::default()
+    };
+    let drops = pumpkin::world::loot::generate_loot_from_handle(&loot_table, rand::random(), &params)
+        .into_iter()
+        .filter(|stack| stack.item_count > 0)
+        .map(|stack| crate::proto::patchbukkit::itemstack::ItemStack {
+            r#type: format!("minecraft:{}", stack.item.registry_key),
+            amount: u32::from(stack.item_count),
+        })
+        .collect();
+    Some(GetBlockDropsResponse { drops })
 }
