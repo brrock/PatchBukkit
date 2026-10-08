@@ -151,9 +151,24 @@ pub fn ffi_native_bridge_teleport_entity_impl(request: TeleportEntityRequest) ->
     let yaw = loc.yaw;
     let pitch = loc.pitch;
 
+    let target_world = loc
+        .world
+        .as_ref()
+        .and_then(|world| world.uuid.as_ref())
+        .and_then(|uuid| uuid::Uuid::parse_str(&uuid.value).ok())
+        .and_then(|uuid| {
+            ctx.plugin_context
+                .server
+                .worlds
+                .load()
+                .iter()
+                .find(|world| world.uuid == uuid)
+                .cloned()
+        });
+
     with_player(request.uuid.as_ref(), |player| {
         let position = pumpkin_util::math::vector3::Vector3::new(pos.x, pos.y, pos.z);
-        let world = player.living_entity.entity.world.load_full();
+        let world = target_world.unwrap_or_else(|| player.living_entity.entity.world.load_full());
         ctx.runtime.spawn(async move {
             player.teleport(position, Some(yaw), Some(pitch), world);
         });

@@ -38,6 +38,9 @@ pub use config::*;
 pub mod entity;
 pub use entity::*;
 
+pub mod entity_state;
+pub use entity_state::*;
+
 pub mod world;
 pub use world::*;
 

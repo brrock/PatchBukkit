@@ -202,8 +202,19 @@ public class PatchBukkitUnsafeValues implements UnsafeValues {
 	}
 
 	public @NotNull ItemStack deserializeStack(@NotNull Map<String, Object> args) {
-	    System.out.println("Deserializing itemstack: " + args);
-		return new ItemStack(Material.STONE);
+		// Reads the format written by PatchBukkitItemStack#serialize (Bukkit's legacy layout).
+		Object typeName = args.containsKey("type") ? args.get("type") : args.get("id");
+		Material type = typeName == null ? null : Material.matchMaterial(String.valueOf(typeName));
+		if (type == null || type.isAir()) {
+			return ItemStack.empty();
+		}
+		int amount = args.get("amount") instanceof Number n ? n.intValue()
+			: args.get("count") instanceof Number c ? c.intValue() : 1;
+		org.patchbukkit.inventory.PatchBukkitItemStack stack = new org.patchbukkit.inventory.PatchBukkitItemStack(type, amount);
+		if (args.get("meta") instanceof org.bukkit.inventory.meta.ItemMeta meta) {
+			stack.setItemMeta(meta);
+		}
+		return stack;
 	}
 
 	public @NotNull ItemStack deserializeItemHover(@NotNull ShowItem itemHover) {

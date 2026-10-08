@@ -42,6 +42,8 @@ pub async fn on_load_inner(plugin: &PatchBukkitPlugin, server: Arc<Context>) -> 
     // Manage embedded resources
     setup_resources(&dirs.jassets).map_err(|e| format!("Failed to setup resources: {e}"))?;
 
+    events::lifecycle::PlayerLifecycleHandler::register(&server, plugin.command_tx.clone());
+
     let runtime_handle = plugin.runtime.handle().clone();
     let command_tx = plugin.command_tx.clone();
     let server_clone = server;

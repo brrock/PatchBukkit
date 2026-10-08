@@ -223,6 +223,8 @@ public class PatchBukkitPluginManager implements PluginManager {
             try {
                 if (plugin instanceof org.bukkit.plugin.java.JavaPlugin javaPlugin) {
                     javaPlugin.setEnabled(true);
+                    // Same order as Bukkit's JavaPluginLoader: the event follows onEnable.
+                    callEvent(new org.bukkit.event.server.PluginEnableEvent(plugin));
                 } else {
                     plugin.getPluginLoader().enablePlugin(plugin);
                 }
@@ -240,6 +242,8 @@ public class PatchBukkitPluginManager implements PluginManager {
         if (plugin.isEnabled()) {
             try {
                 if (plugin instanceof org.bukkit.plugin.java.JavaPlugin javaPlugin) {
+                    // Same order as Bukkit's JavaPluginLoader: the event precedes onDisable.
+                    callEvent(new org.bukkit.event.server.PluginDisableEvent(plugin));
                     javaPlugin.setEnabled(false);
                 } else {
                     plugin.getPluginLoader().disablePlugin(plugin);

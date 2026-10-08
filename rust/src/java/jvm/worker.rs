@@ -154,6 +154,26 @@ impl JvmWorker {
                     let _ = respond_to.send(self.plugin_manager.unload_all_plugins());
                     break;
                 }
+                JvmCommand::PlayerLifecycle {
+                    player,
+                    server,
+                    joined,
+                    respond_to,
+                } => {
+                    if let Some(ref jvm) = self.jvm {
+                        let res = jvm.attach_current_thread(|env| -> anyhow::Result<()> {
+                            if joined {
+                                EventManager::register_player(env, &player, &server)
+                            } else {
+                                EventManager::unregister_player(env, &player)
+                            }
+                        });
+                        if let Err(e) = res {
+                            tracing::error!("Failed to update Bukkit player list: {e}");
+                        }
+                    }
+                    let _ = respond_to.send(());
+                }
                 JvmCommand::FireEvent {
                     respond_to,
                     plugin,

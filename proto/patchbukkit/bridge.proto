@@ -30,6 +30,13 @@ service NativeBridge {
   rpc SetEntityVelocity(patchbukkit.entity.SetEntityVelocityRequest) returns (google.protobuf.Empty);
   rpc SetEntityPose(patchbukkit.entity.SetEntityPoseRequest) returns (google.protobuf.Empty);
   rpc TeleportEntity(patchbukkit.entity.TeleportEntityRequest) returns (google.protobuf.Empty);
+  rpc GetEntityState(patchbukkit.common.UUID) returns (patchbukkit.entity.EntityStateResponse);
+  rpc SetEntityState(patchbukkit.entity.SetEntityStateRequest) returns (google.protobuf.Empty);
+  rpc AddEntityPassenger(patchbukkit.entity.EntityPassengerRequest) returns (patchbukkit.entity.EntityActionResponse);
+  rpc RemoveEntityPassenger(patchbukkit.entity.EntityPassengerRequest) returns (patchbukkit.entity.EntityActionResponse);
+  rpc EjectEntityPassengers(patchbukkit.common.UUID) returns (patchbukkit.entity.EntityActionResponse);
+  rpc LeaveEntityVehicle(patchbukkit.common.UUID) returns (patchbukkit.entity.EntityActionResponse);
+  rpc RemoveEntity(patchbukkit.common.UUID) returns (google.protobuf.Empty);
   rpc GetGamemode(patchbukkit.common.UUID) returns (patchbukkit.entity.GetGamemodeResponse);
   rpc SetGamemode(patchbukkit.entity.SetGamemodeRequest) returns (google.protobuf.Empty);
   rpc IsOnGround(patchbukkit.common.UUID) returns (patchbukkit.entity.IsOnGroundResponse);
