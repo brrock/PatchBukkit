@@ -3748,6 +3748,41 @@ impl PatchBukkitEvent for pumpkin::plugin::player::player_item_mend::PlayerItemM
     }
 }
 
+/// Parses a Minecraft JSON text component sent back from the JVM. Adventure writes unstyled
+/// child text as bare JSON strings, which Pumpkin's component type does not accept, so those
+/// are turned into `{"text": ...}` objects first.
+fn parse_text_component(json: &str) -> Result<pumpkin_util::text::TextComponent, serde_json::Error> {
+    fn normalize(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::String(text) => {
+                *value = serde_json::json!({ "text": text.clone() });
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(normalize),
+            serde_json::Value::Object(fields) => {
+                for key in ["extra", "with"] {
+                    if let Some(children) = fields.get_mut(key) {
+                        normalize(children);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut value: serde_json::Value = serde_json::from_str(json)?;
+    normalize(&mut value);
+    // Round-trip through a string: the component type borrows from its input, which an owned
+    // `Value` cannot provide.
+    serde_json::from_str(&value.to_string())
+}
+
+/// True for a component that renders as nothing, which plugins use to hide a join/quit message.
+fn is_blank_component(component: &pumpkin_util::text::TextComponent) -> bool {
+    serde_json::to_value(component).is_ok_and(|v| {
+        v.get("text").and_then(serde_json::Value::as_str) == Some("") && v.get("extra").is_none()
+    })
+}
+
 impl PatchBukkitEvent for pumpkin::plugin::player::player_join::PlayerJoinEvent {
     fn to_payload(&self, server: Arc<Server>) -> JvmEventPayload {
         JvmEventPayload {
@@ -3765,6 +3800,25 @@ impl PatchBukkitEvent for pumpkin::plugin::player::player_join::PlayerJoinEvent 
                 player: Some(self.player.clone()),
             },
         }
+    }
+
+    fn apply_modifications(&mut self, _server: &Arc<Server>, data: Data) -> Option<()> {
+        let Data::PlayerJoin(e) = data else {
+            return Some(());
+        };
+        if e.join_message.is_empty() {
+            return Some(());
+        }
+        match parse_text_component(&e.join_message) {
+            Ok(message) if message == self.join_message => {}
+            Ok(message) if is_blank_component(&message) => {
+                // A plugin set the join message to null: Pumpkin only broadcasts uncancelled joins.
+                pumpkin::plugin::Cancellable::set_cancelled(self, true);
+            }
+            Ok(message) => self.join_message = message,
+            Err(err) => tracing::warn!("Ignoring invalid join message from plugin: {err}"),
+        }
+        Some(())
     }
 
     fn set_cancelled(&mut self, cancelled: bool) {
@@ -3820,6 +3874,25 @@ impl PatchBukkitEvent for pumpkin::plugin::player::player_leash_entity::PlayerLe
 }
 
 impl PatchBukkitEvent for pumpkin::plugin::player::player_leave::PlayerLeaveEvent {
+    fn apply_modifications(&mut self, _server: &Arc<Server>, data: Data) -> Option<()> {
+        let Data::PlayerLeave(e) = data else {
+            return Some(());
+        };
+        if e.leave_message.is_empty() {
+            return Some(());
+        }
+        match parse_text_component(&e.leave_message) {
+            Ok(message) if message == self.leave_message => {}
+            Ok(message) if is_blank_component(&message) => {
+                // A plugin set the quit message to null: Pumpkin only broadcasts uncancelled quits.
+                pumpkin::plugin::Cancellable::set_cancelled(self, true);
+            }
+            Ok(message) => self.leave_message = message,
+            Err(err) => tracing::warn!("Ignoring invalid quit message from plugin: {err}"),
+        }
+        Some(())
+    }
+
     fn to_payload(&self, server: Arc<Server>) -> JvmEventPayload {
         JvmEventPayload {
             event: Event {

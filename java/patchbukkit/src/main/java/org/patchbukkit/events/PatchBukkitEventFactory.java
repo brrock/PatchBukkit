@@ -20,6 +20,8 @@ import patchbukkit.common.UUID;
 import patchbukkit.events.*;
 
 import java.lang.reflect.Constructor;
+import java.util.Collections;
+import java.util.WeakHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -147,6 +149,13 @@ public class PatchBukkitEventFactory {
             return format;
         }
     }
+
+    /**
+     * Join and quit messages as they were handed to the plugin, so an unchanged message is not
+     * sent back to Rust (Pumpkin cannot parse every translatable component we would return).
+     */
+    private static final java.util.Map<org.bukkit.event.Event, Component> ORIGINAL_JOIN_QUIT_MESSAGES =
+        Collections.synchronizedMap(new WeakHashMap<>());
 
     @Nullable
     public static org.bukkit.event.Event createEvent(@NotNull Event event) {
@@ -809,7 +818,9 @@ public class PatchBukkitEventFactory {
                     pbe.setEntityId(ev.getEntityId());
                 }
                 Component msg = ev.getJoinMessage().isEmpty() ? Component.empty() : GsonComponentSerializer.gson().deserialize(ev.getJoinMessage());
-                yield new org.bukkit.event.player.PlayerJoinEvent(player, msg);
+                var joinEvent = new org.bukkit.event.player.PlayerJoinEvent(player, msg);
+                ORIGINAL_JOIN_QUIT_MESSAGES.put(joinEvent, msg);
+                yield joinEvent;
             }
             case PLAYER_KICK -> {
                 var ev = event.getPlayerKick();
@@ -829,7 +840,9 @@ public class PatchBukkitEventFactory {
                 }
                 if (player == null) yield null;
                 Component msg = ev.getLeaveMessage().isEmpty() ? Component.empty() : GsonComponentSerializer.gson().deserialize(ev.getLeaveMessage());
-                yield new org.bukkit.event.player.PlayerQuitEvent(player, msg);
+                var quitEvent = new org.bukkit.event.player.PlayerQuitEvent(player, msg);
+                ORIGINAL_JOIN_QUIT_MESSAGES.put(quitEvent, msg);
+                yield quitEvent;
             }
             case PLAYER_LEVEL_CHANGE -> {
                 var ev = event.getPlayerLevelChange();
@@ -1319,14 +1332,39 @@ public class PatchBukkitEventFactory {
     public static byte[] toFireEventResponse(@NotNull org.bukkit.event.Event event) {
         try {
             boolean cancelled = event instanceof org.bukkit.event.Cancellable c && c.isCancelled();
-            return FireEventResponse.newBuilder()
-                .setCancelled(cancelled)
-                .build()
-                .toByteArray();
+            var builder = FireEventResponse.newBuilder().setCancelled(cancelled);
+            if (event instanceof org.bukkit.event.player.PlayerJoinEvent join) {
+                Component original = ORIGINAL_JOIN_QUIT_MESSAGES.remove(join);
+                Component now = join.joinMessage();
+                if (original == null || !original.equals(now)) {
+                    builder.setData(Event.newBuilder().setPlayerJoin(
+                        PlayerJoinEvent.newBuilder()
+                            .setPlayerUuid(UUID.newBuilder().setValue(join.getPlayer().getUniqueId().toString()))
+                            .setJoinMessage(serializeMessage(now))
+                    ).build());
+                }
+            } else if (event instanceof org.bukkit.event.player.PlayerQuitEvent quit) {
+                Component original = ORIGINAL_JOIN_QUIT_MESSAGES.remove(quit);
+                Component now = quit.quitMessage();
+                if (original == null || !original.equals(now)) {
+                    builder.setData(Event.newBuilder().setPlayerLeave(
+                        PlayerLeaveEvent.newBuilder()
+                            .setPlayerUuid(UUID.newBuilder().setValue(quit.getPlayer().getUniqueId().toString()))
+                            .setLeaveMessage(serializeMessage(now))
+                    ).build());
+                }
+            }
+            return builder.build().toByteArray();
         } catch (Throwable t) {
             LOGGER.log(Level.SEVERE, "Exception serializing event response: " + t.getMessage(), t);
             return FireEventResponse.newBuilder().setCancelled(false).build().toByteArray();
         }
+    }
+
+    /** Serializes a join/quit message as Minecraft JSON; a null message becomes an empty component. */
+    @NotNull
+    private static String serializeMessage(@Nullable Component message) {
+        return GsonComponentSerializer.gson().serialize(message == null ? Component.empty() : message);
     }
 
     @Nullable
