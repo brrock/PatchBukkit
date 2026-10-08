@@ -301,3 +301,8 @@ message EntityPassengerRequest {
 message EntityActionResponse {
   bool success = 1;
 }
+
+message OpenPlayerInventoryRequest {
+  patchbukkit.common.UUID viewer = 1;
+  patchbukkit.common.UUID target = 2;
+}

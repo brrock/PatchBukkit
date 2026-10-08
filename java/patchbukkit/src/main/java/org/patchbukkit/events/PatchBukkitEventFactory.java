@@ -13,6 +13,11 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.event.inventory.ClickType;
+import org.bukkit.event.inventory.InventoryAction;
+import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -65,7 +70,9 @@ public class PatchBukkitEventFactory {
         }
         org.bukkit.entity.Player sender = legacy.getPlayer();
         String originalMessage = legacy.getMessage();
-        server.getEventManager().fireEvent(legacy, pluginName);
+        // Chat is shared by every plugin (see CHAT_HANDLER_PLUGIN in Rust): fire the legacy event
+        // through all listeners in priority order so each one sees the previous plugin's edits.
+        server.getEventManager().callEvent(legacy);
 
         io.papermc.paper.event.player.AsyncChatEvent paper = null;
         ChatRenderer defaultRenderer = ChatRenderer.defaultRenderer();
@@ -76,7 +83,7 @@ public class PatchBukkitEventFactory {
             paper = new io.papermc.paper.event.player.AsyncChatEvent(
                 false, sender, new java.util.HashSet<Audience>(legacy.getRecipients()),
                 defaultRenderer, original, original, null);
-            server.getEventManager().fireEvent(paper, pluginName);
+            server.getEventManager().callEvent(paper);
         } catch (Throwable t) {
             LOGGER.log(Level.WARNING, "Could not fire Paper AsyncChatEvent for chat from " + sender.getName(), t);
             paper = null;
@@ -411,7 +418,9 @@ public class PatchBukkitEventFactory {
             }
             case INVENTORY_OPEN -> {
                 var ev = event.getInventoryOpen();
-                yield createGenericBukkitEvent("org.bukkit.event.inventory.InventoryOpenEvent", ev);
+                Player player = getPlayer(ev.getPlayerUuid().getValue());
+                if (player == null) yield null;
+                yield new org.bukkit.event.inventory.InventoryOpenEvent(viewFor(player, ""));
             }
             case INVENTORY_PICKUP_ITEM -> {
                 var ev = event.getInventoryPickupItem();
@@ -666,11 +675,26 @@ public class PatchBukkitEventFactory {
             }
             case INVENTORY_CLOSE -> {
                 var ev = event.getInventoryClose();
-                yield createGenericBukkitEvent("org.bukkit.event.inventory.InventoryCloseEvent", ev);
+                Player player = getPlayer(ev.getPlayerUuid().getValue());
+                if (player == null) yield null;
+                InventoryView view = viewFor(player, ev.getWindowType());
+                // The window is closed on the Pumpkin side, so the tracked view is no longer open.
+                if (player instanceof org.patchbukkit.entity.PatchBukkitHumanEntity human) {
+                    human.clearOpenInventoryView();
+                }
+                yield new org.bukkit.event.inventory.InventoryCloseEvent(view);
             }
             case INVENTORY_CLICK -> {
                 var ev = event.getInventoryClick();
-                yield createGenericBukkitEvent("org.bukkit.event.inventory.InventoryClickEvent", ev);
+                Player player = getPlayer(ev.getPlayerUuid().getValue());
+                if (player == null) yield null;
+                InventoryView view = viewFor(player, ev.getWindowType());
+                int rawSlot = ev.getRawSlot();
+                InventoryType.SlotType slotType = rawSlot >= 0 && rawSlot < view.getTopInventory().getSize()
+                    ? InventoryType.SlotType.CONTAINER
+                    : InventoryType.SlotType.QUICKBAR;
+                yield new org.bukkit.event.inventory.InventoryClickEvent(
+                    view, slotType, rawSlot, clickTypeFor(ev.getClickType()), InventoryAction.PICKUP_ALL);
             }
             case PLAYER_ITEM_HELD -> {
                 var ev = event.getPlayerItemHeld();
@@ -1323,6 +1347,44 @@ public class PatchBukkitEventFactory {
         } catch (Throwable t) {
             LOGGER.log(Level.SEVERE, "Exception in createEvent for " + event.getDataCase() + ": " + t.getMessage(), t);
             return null;
+        }
+    }
+
+    /** The view the player has open, or a fresh view of the Pumpkin window type when Java did not open it. */
+    @NotNull
+    private static InventoryView viewFor(@NotNull Player player, @NotNull String windowType) {
+        InventoryView open = player.getOpenInventory();
+        if (open != null) {
+            return open;
+        }
+        Inventory top;
+        if (windowType.startsWith("Generic9x")) {
+            int rows = windowType.charAt(windowType.length() - 1) - '0';
+            top = Bukkit.createInventory(player, Math.max(1, Math.min(6, rows)) * 9);
+        } else {
+            InventoryType type = switch (windowType) {
+                case "Crafting" -> InventoryType.WORKBENCH;
+                case "Furnace" -> InventoryType.FURNACE;
+                case "BlastFurnace" -> InventoryType.BLAST_FURNACE;
+                case "Smoker" -> InventoryType.SMOKER;
+                case "Anvil" -> InventoryType.ANVIL;
+                case "Enchantment" -> InventoryType.ENCHANTING;
+                case "BrewingStand" -> InventoryType.BREWING;
+                case "Hopper" -> InventoryType.HOPPER;
+                case "Merchant" -> InventoryType.MERCHANT;
+                default -> null;
+            };
+            top = type != null ? Bukkit.createInventory(player, type) : Bukkit.createInventory(player, 27);
+        }
+        return new org.patchbukkit.inventory.PatchBukkitInventoryView(player, top);
+    }
+
+    @NotNull
+    private static ClickType clickTypeFor(@NotNull String pumpkinName) {
+        try {
+            return ClickType.valueOf(pumpkinName.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return ClickType.LEFT;
         }
     }
 

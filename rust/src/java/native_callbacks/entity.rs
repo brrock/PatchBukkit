@@ -10,6 +10,7 @@ use crate::{
             DamageEntityRequest, EntityHealthResponse, GetCooldownRequest, GetCooldownResponse,
             GetEntityIdResponse, GetEntityUuidRequest, GetEntityUuidResponse,
             GetExperienceResponse, GetFoodLevelResponse, GetPlayerPoseStateResponse,
+            OpenPlayerInventoryRequest,
             KickPlayerRequest, PlayerConnectionInfoResponse, SendActionBarRequest,
             SendBlockChangeRequest, SendGameEventRequest, SendResourcePackRequest,
             SendTitleRequest, SetCompassTargetRequest, SetCooldownRequest, SetDisplayNameRequest,
@@ -735,6 +736,57 @@ pub fn ffi_native_bridge_get_cooldown_impl(
 pub fn ffi_native_bridge_open_ender_chest_impl(request: Uuid) -> Option<()> {
     with_player(Some(&request), |player| {
         player.open_ender_chest();
+    })
+}
+
+/// Screen factory showing another player's inventory (hotbar row first, then armor
+/// and offhand) as a 9x6 chest, the way Bukkit's `openInventory(target.getInventory())` behaves.
+struct PlayerInventoryScreenFactory {
+    target: std::sync::Arc<pumpkin_inventory::player::player_inventory::PlayerInventory>,
+    title: pumpkin_util::text::TextComponent,
+}
+
+impl pumpkin_inventory::screen_handler::ScreenHandlerFactory for PlayerInventoryScreenFactory {
+    fn create_screen_handler(
+        &self,
+        sync_id: u8,
+        player_inventory: &std::sync::Arc<pumpkin_inventory::player::player_inventory::PlayerInventory>,
+        player: &dyn pumpkin_inventory::screen_handler::InventoryPlayer,
+    ) -> Option<pumpkin_inventory::screen_handler::SharedScreenHandler> {
+        // 41 player slots (36 main + armor + offhand) padded to a 9x6 chest.
+        let padded: std::sync::Arc<dyn pumpkin_inventory::Inventory> =
+            pumpkin_inventory::double::DoubleInventory::new(
+                self.target.clone(),
+                std::sync::Arc::new(pumpkin_inventory::SimpleInventory::new(13)),
+            );
+        let handler = pumpkin_inventory::generic_container_screen_handler::create_generic_9x6(
+            sync_id,
+            player_inventory,
+            padded,
+            player,
+        );
+        Some(std::sync::Arc::new(std::sync::Mutex::new(handler)))
+    }
+
+    fn get_display_name(&self) -> pumpkin_util::text::TextComponent {
+        self.title.clone()
+    }
+}
+
+pub fn ffi_native_bridge_open_player_inventory_impl(
+    request: OpenPlayerInventoryRequest,
+) -> Option<()> {
+    let target = with_player(request.target.as_ref(), |p| p)?;
+    with_player(request.viewer.as_ref(), |viewer| {
+        if viewer.gameprofile.id == target.gameprofile.id {
+            viewer.on_screen_handler_opened(&viewer.player_screen_handler);
+            return;
+        }
+        let factory = PlayerInventoryScreenFactory {
+            target: target.inventory.clone(),
+            title: pumpkin_util::text::TextComponent::text(target.gameprofile.name.clone()),
+        };
+        viewer.open_handled_screen(&factory, None);
     })
 }
 

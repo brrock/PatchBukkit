@@ -556,9 +556,26 @@ public class PatchBukkitHumanEntity
         }
         this.openInventoryView = new org.patchbukkit.inventory.PatchBukkitInventoryView(this, inventory);
         try {
-            NativeBridgeFfi.openEnderChest(BridgeUtils.convertUuid(getUniqueId()));
+            if (inventory instanceof org.bukkit.inventory.PlayerInventory pinv
+                    && pinv.getHolder() instanceof org.bukkit.entity.HumanEntity target) {
+                NativeBridgeFfi.openPlayerInventory(
+                    patchbukkit.entity.OpenPlayerInventoryRequest.newBuilder()
+                        .setViewer(BridgeUtils.convertUuid(getUniqueId()))
+                        .setTarget(BridgeUtils.convertUuid(target.getUniqueId()))
+                        .build());
+            } else if (inventory.getType() == org.bukkit.event.inventory.InventoryType.ENDER_CHEST) {
+                NativeBridgeFfi.openEnderChest(BridgeUtils.convertUuid(getUniqueId()));
+            } else {
+                BridgeUtils.logBridgeFailure("openInventory",
+                    new UnsupportedOperationException("opening " + inventory.getType() + " inventories"));
+            }
         } catch (Throwable t) { BridgeUtils.logBridgeFailure("openInventory", t); }
         return this.openInventoryView;
+    }
+
+    /** Forgets the tracked view once Pumpkin has closed the window. */
+    public void clearOpenInventoryView() {
+        this.openInventoryView = null;
     }
 
     @Override

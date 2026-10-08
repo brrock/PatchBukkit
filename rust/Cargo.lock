@@ -3024,6 +3024,7 @@ dependencies = [
  "pumpkin-api-macros",
  "pumpkin-config",
  "pumpkin-data",
+ "pumpkin-inventory",
  "pumpkin-protocol",
  "pumpkin-util",
  "rand 0.10.3 (git+https://github.com/rust-random/rand)",

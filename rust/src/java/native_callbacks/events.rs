@@ -12,9 +12,13 @@ use crate::proto::patchbukkit::events::{
 static REGISTERED_EVENTS: LazyLock<Mutex<HashSet<(String, String)>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
-/// Plugins that already have the chat handler. Their legacy and Paper chat listeners share it.
-static CHAT_HANDLER_PLUGINS: LazyLock<Mutex<HashSet<String>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
+/// Set once the single chat handler is registered with Pumpkin.
+static CHAT_HANDLER_REGISTERED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Plugin name given to the shared chat handler. The JVM side fires chat through every
+/// plugin's listeners in priority order, so the handler is not tied to one plugin.
+const CHAT_HANDLER_PLUGIN: &str = "*chat*";
 
 pub fn ffi_native_bridge_call_event_impl(request: CallEventRequest) -> Option<CallEventResponse> {
     Some(CallEventResponse {
@@ -1563,18 +1567,14 @@ pub fn ffi_native_bridge_register_event_impl(request: RegisterEventRequest) -> O
         "org.bukkit.event.player.AsyncPlayerChatEvent"
         | "org.bukkit.event.player.PlayerChatEvent"
         | "io.papermc.paper.event.player.AsyncChatEvent" => {
-            if CHAT_HANDLER_PLUGINS
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(request.plugin_name.clone())
-            {
+            if !CHAT_HANDLER_REGISTERED.swap(true, std::sync::atomic::Ordering::SeqCst) {
                 plugin_context
                     .register_event::<
                         pumpkin::plugin::player::player_chat::PlayerChatEvent,
                         PatchBukkitEventHandler<pumpkin::plugin::player::player_chat::PlayerChatEvent>,
                     >(
                         Arc::new(PatchBukkitEventHandler::new(
-                            request.plugin_name.clone(),
+                            CHAT_HANDLER_PLUGIN.to_string(),
                             command_tx.clone(),
                         )),
                         pumpkin_priority,

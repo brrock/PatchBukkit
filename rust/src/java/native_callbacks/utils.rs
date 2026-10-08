@@ -39,11 +39,14 @@ where
     let uuid_str = &proto_uuid?.value;
     let player_uuid = uuid::Uuid::parse_str(uuid_str).ok()?;
 
-    if let Ok(read_guard) = PLAYER_HANDLE_CACHE.read()
-        && let Some(ref cache) = *read_guard
-        && let Some(player) = cache.get(&player_uuid)
-    {
-        return Some(f(player.clone()));
+    // Clone out of the cache and release the lock before running `f`: `f` may fire a
+    // Pumpkin event whose handler caches the player, which takes the write lock.
+    let cached = PLAYER_HANDLE_CACHE
+        .read()
+        .ok()
+        .and_then(|guard| guard.as_ref()?.get(&player_uuid).cloned());
+    if let Some(player) = cached {
+        return Some(f(player));
     }
 
     let player = ctx.plugin_context.server.get_player_by_uuid(player_uuid)?;
