@@ -18,8 +18,20 @@ import patchbukkit.world.GetBlockStateRegistryResponse;
  */
 public final class BlockStateRegistry {
 
-    /** A block's properties, in the order the server lists them, with their values in order. */
-    public record BlockInfo(String key, int defaultStateId, Map<String, List<String>> properties) {}
+    /** Default state of {@link #FLAG_AIR}: the block is air. */
+    public static final int FLAG_AIR = 1;
+    /** The default state is solid ({@code Material#isSolid}). */
+    public static final int FLAG_SOLID = 1 << 1;
+    /** The default state is an opaque full cube ({@code Material#isOccluding}). */
+    public static final int FLAG_OCCLUDING = 1 << 2;
+    /** The block can burn ({@code Material#isBurnable}). */
+    public static final int FLAG_BURNABLE = 1 << 3;
+
+    /**
+     * A block's properties, in the order the server lists them, with their values in order, and
+     * the {@code FLAG_*} bits of its default state.
+     */
+    public record BlockInfo(String key, int defaultStateId, int flags, Map<String, List<String>> properties) {}
 
     private static volatile BlockStateRegistry instance;
 
@@ -54,11 +66,14 @@ public final class BlockStateRegistry {
         }
 
         this.blocks = new HashMap<>();
-        for (int defaultId : response.getDefaultStateIdsList()) {
+        List<Integer> defaultIds = response.getDefaultStateIdsList();
+        for (int i = 0; i < defaultIds.size(); i++) {
+            int defaultId = defaultIds.get(i);
+            int flags = i < response.getDefaultBlockFlagsCount() ? response.getDefaultBlockFlags(i) : 0;
             String key = blockKey(this.states[defaultId]);
             Map<String, List<String>> blockProps = new LinkedHashMap<>();
             props.getOrDefault(key, Map.of()).forEach((name, values) -> blockProps.put(name, List.copyOf(values)));
-            this.blocks.put(key, new BlockInfo(key, defaultId, Collections.unmodifiableMap(blockProps)));
+            this.blocks.put(key, new BlockInfo(key, defaultId, flags, Collections.unmodifiableMap(blockProps)));
         }
     }
 

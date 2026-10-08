@@ -80,23 +80,46 @@ pub(crate) fn state_to_string(state_id: BlockStateId) -> String {
     out
 }
 
+/// Bits of `default_block_flags`, mirrored in `BlockStateRegistry` on the Java side.
+const BLOCK_FLAG_AIR: u32 = 1;
+const BLOCK_FLAG_SOLID: u32 = 1 << 1;
+const BLOCK_FLAG_OCCLUDING: u32 = 1 << 2;
+const BLOCK_FLAG_BURNABLE: u32 = 1 << 3;
+
 pub fn ffi_native_bridge_get_block_state_registry_impl(
     _request: EmptyRequest,
 ) -> Option<GetBlockStateRegistryResponse> {
     let mut states = Vec::new();
     let mut default_state_ids = Vec::new();
+    let mut default_block_flags = Vec::new();
     let mut last_block = None;
     for state_id in (0..=u16::MAX).map_while(BlockStateId::new) {
         let block = Block::from_state_id(state_id);
         if last_block != Some(block.id) {
             last_block = Some(block.id);
             default_state_ids.push(u32::from(block.default_state.id.as_u16()));
+            let state = block.default_state;
+            let mut flags = 0;
+            if state.is_air() {
+                flags |= BLOCK_FLAG_AIR;
+            }
+            if state.is_solid() {
+                flags |= BLOCK_FLAG_SOLID;
+            }
+            if state.is_solid_render() {
+                flags |= BLOCK_FLAG_OCCLUDING;
+            }
+            if block.flammable.is_some() {
+                flags |= BLOCK_FLAG_BURNABLE;
+            }
+            default_block_flags.push(flags);
         }
         states.push(state_to_string(state_id));
     }
     Some(GetBlockStateRegistryResponse {
         states,
         default_state_ids,
+        default_block_flags,
     })
 }
 

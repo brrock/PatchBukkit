@@ -5,6 +5,7 @@ import org.bukkit.Material;
 import org.bukkit.block.BlockType;
 import org.bukkit.block.data.BlockData;
 import org.patchbukkit.PatchBukkitBlockData;
+import org.patchbukkit.world.BlockStateRegistry;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
@@ -14,6 +15,24 @@ import java.util.function.Consumer;
 public final class PatchBukkitBlockType {
 
     private PatchBukkitBlockType() {}
+
+    /** Whether the block's default state has the given {@link BlockStateRegistry} flag. */
+    private static boolean hasFlag(Material material, int flag) {
+        try {
+            BlockStateRegistry.BlockInfo info = BlockStateRegistry.get().block(material.getKey().toString());
+            return info != null && (info.flags() & flag) != 0;
+        } catch (Throwable t) {
+            // The native bridge isn't up (e.g. unit tests).
+            return false;
+        }
+    }
+
+    /** Blocks that fall when unsupported; the server doesn't report this yet. */
+    private static boolean hasGravity(Material material) {
+        String name = material.name();
+        return name.equals("SAND") || name.equals("RED_SAND") || name.equals("GRAVEL") || name.equals("DRAGON_EGG")
+            || name.endsWith("_CONCRETE_POWDER") || name.endsWith("ANVIL");
+    }
 
     public static BlockType create(Material material) {
         if (material == null || material.isLegacy()) return null;
@@ -54,26 +73,25 @@ public final class PatchBukkitBlockType {
                     if ("hasItemType".equals(name)) {
                         return material.isItem();
                     }
+                    // Material's own isAir/isSolid/... delegate to this proxy, so answer from the
+                    // server's block data instead of calling back into Material.
                     if ("isSolid".equals(name)) {
-                        return material.isSolid();
+                        return hasFlag(material, BlockStateRegistry.FLAG_SOLID);
                     }
                     if ("isAir".equals(name)) {
-                        return material.isAir();
+                        return material == Material.AIR || material == Material.CAVE_AIR || material == Material.VOID_AIR;
                     }
                     if ("isBurnable".equals(name)) {
-                        return material.isBurnable();
+                        return hasFlag(material, BlockStateRegistry.FLAG_BURNABLE);
                     }
                     if ("isEdible".equals(name)) {
                         return material.isEdible();
                     }
                     if ("isOccluding".equals(name)) {
-                        return material.isOccluding();
-                    }
-                    if ("isInteractable".equals(name)) {
-                        return material.isInteractable();
+                        return hasFlag(material, BlockStateRegistry.FLAG_OCCLUDING);
                     }
                     if ("hasGravity".equals(name) || "isGravity".equals(name)) {
-                        return material.hasGravity();
+                        return hasGravity(material);
                     }
                     if ("translationKey".equals(name) || "getTranslationKey".equals(name)) {
                         return material.getTranslationKey();

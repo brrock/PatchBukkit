@@ -263,6 +263,8 @@ message GetBlockStateRegistryResponse {
   repeated string states = 1;
   // Default state id of every block, in block registry order.
   repeated uint32 default_state_ids = 2;
+  // Per block (same order as default_state_ids): bit flags of its default state, see BlockStateRegistry.
+  repeated uint32 default_block_flags = 3;
 }
 
 message GetBiomesRequest {
