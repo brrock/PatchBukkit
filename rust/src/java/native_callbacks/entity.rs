@@ -992,3 +992,56 @@ pub fn ffi_native_bridge_open_workstation_impl(
         crate::proto::patchbukkit::entity::OpenWorkstationResponse { opened }
     })
 }
+
+/// Runs a command through Pumpkin's dispatcher, for commands Bukkit does not know
+/// (vanilla ones such as `/say`), as the given player or the console.
+pub fn ffi_native_bridge_dispatch_server_command_impl(
+    request: crate::proto::patchbukkit::entity::DispatchServerCommandRequest,
+) -> Option<()> {
+    let ctx = CALLBACK_CONTEXT.get()?;
+    let server = ctx.plugin_context.server.clone();
+    let sender = match request.player.as_ref() {
+        Some(uuid) if !uuid.value.is_empty() => {
+            pumpkin::command::CommandSender::Player(with_player(Some(uuid), |p| p)?)
+        }
+        _ => pumpkin::command::CommandSender::Console,
+    };
+    let source = sender.into_source(&server);
+    server
+        .command_dispatcher
+        .load()
+        .handle_command(&source, request.command.as_str());
+    Some(())
+}
+
+/// `Player.chat(message)`: the player says something, as if typed in chat.
+pub fn ffi_native_bridge_player_chat_impl(
+    request: crate::proto::patchbukkit::entity::PlayerChatRequest,
+) -> Option<()> {
+    let ctx = CALLBACK_CONTEXT.get()?;
+    let server = ctx.plugin_context.server.clone();
+    let player = with_player(request.uuid.as_ref(), |p| p)?;
+    // Runs on the server runtime: the chat event goes back through the JVM worker,
+    // which is busy running the caller.
+    ctx.runtime.spawn(async move {
+        let mut event = pumpkin::plugin::player::player_chat::PlayerChatEvent::new(
+            player.clone(),
+            request.message,
+            vec![],
+            None,
+        );
+        server.plugin_manager.fire(&server, &mut event).await;
+        if pumpkin::plugin::Cancellable::cancelled(&event) {
+            return;
+        }
+        let line = pumpkin_util::text::TextComponent::chat_decorated(
+            &server.advanced_config.chat.format,
+            &player.gameprofile.name,
+            &event.message,
+        );
+        for p in server.get_all_players() {
+            p.send_system_message(&line);
+        }
+    });
+    Some(())
+}

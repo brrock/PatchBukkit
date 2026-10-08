@@ -318,3 +318,14 @@ message OpenWorkstationRequest {
 message OpenWorkstationResponse {
   bool opened = 1;
 }
+
+message DispatchServerCommandRequest {
+  // The player running the command; unset for the console.
+  patchbukkit.common.UUID player = 1;
+  string command = 2;
+}
+
+message PlayerChatRequest {
+  patchbukkit.common.UUID uuid = 1;
+  string message = 2;
+}

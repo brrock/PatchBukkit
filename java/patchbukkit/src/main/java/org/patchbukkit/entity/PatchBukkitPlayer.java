@@ -411,7 +411,12 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
         if (msg.startsWith("/")) {
             performCommand(msg.substring(1));
         } else {
-            sendMessage("<" + getDisplayName() + "> " + msg);
+            try {
+                NativeBridgeFfi.playerChat(patchbukkit.entity.PlayerChatRequest.newBuilder()
+                    .setUuid(BridgeUtils.convertUuid(getUniqueId()))
+                    .setMessage(msg)
+                    .build());
+            } catch (Throwable t) { BridgeUtils.logBridgeFailure("chat", t); }
         }
     }
 

@@ -165,7 +165,9 @@ public class PatchBukkitCommandMap extends SimpleCommandMap {
             } else {
                 sender = org.bukkit.Bukkit.getConsoleSender();
             }
-            return org.bukkit.Bukkit.dispatchCommand(sender, commandLine);
+            // Only the command map: Pumpkin routes registered Bukkit commands here, and an
+            // unknown one must not be handed back to Pumpkin.
+            return ((org.patchbukkit.PatchBukkitServer) org.bukkit.Bukkit.getServer()).getCommandMap().dispatch(sender, commandLine);
         } catch (Throwable t) {
             org.bukkit.Bukkit.getLogger().log(java.util.logging.Level.SEVERE, "Error dispatching command: " + commandLine, t);
             return false;

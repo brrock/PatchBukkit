@@ -27,6 +27,29 @@ public class PatchBukkitItemStack extends ItemStack {
     private Material type;
     private int amount;
     private ItemMeta meta;
+    /** When set, this stack mirrors an inventory slot: changes are written back to it. */
+    private transient Consumer<ItemStack> mirror;
+
+    /**
+     * Binds this stack to an inventory slot, like CraftBukkit's mirror stacks, so plugins
+     * that edit a stack obtained from an inventory (e.g. EssentialsX /more) change the slot.
+     */
+    public PatchBukkitItemStack mirrorTo(Consumer<ItemStack> writer) {
+        this.mirror = writer;
+        return this;
+    }
+
+    private void writeBack() {
+        Consumer<ItemStack> writer = this.mirror;
+        if (writer != null) {
+            this.mirror = null; // avoid re-entry while the slot is written
+            try {
+                writer.accept(this);
+            } finally {
+                this.mirror = writer;
+            }
+        }
+    }
 
     public PatchBukkitItemStack(Material type) {
         this(type, 1);
@@ -49,6 +72,7 @@ public class PatchBukkitItemStack extends ItemStack {
             this.meta = newType.isAir() ? null : PatchBukkitItemMeta.convert(this.meta, newType);
         }
         this.type = newType;
+        writeBack();
     }
 
     @Override
@@ -66,6 +90,7 @@ public class PatchBukkitItemStack extends ItemStack {
     @Override
     public void setAmount(int amount) {
         this.amount = amount;
+        writeBack();
     }
 
     @Override
@@ -86,6 +111,7 @@ public class PatchBukkitItemStack extends ItemStack {
         if (getItemMetaInternal() instanceof Damageable damageable) {
             damageable.setDamage(durability);
         }
+        writeBack();
     }
 
     /** Returns the live meta, creating it for non-air items. */
@@ -106,12 +132,15 @@ public class PatchBukkitItemStack extends ItemStack {
     public boolean setItemMeta(@Nullable ItemMeta itemMeta) {
         if (itemMeta == null) {
             this.meta = null;
+            writeBack();
             return true;
         }
         if (this.type.isAir() || PatchBukkitItemMeta.handler(itemMeta) == null) {
+            writeBack();
             return false;
         }
         this.meta = PatchBukkitItemMeta.convert(itemMeta, this.type);
+        writeBack();
         return true;
     }
 
@@ -166,6 +195,7 @@ public class PatchBukkitItemStack extends ItemStack {
         if (current != null) {
             current.addEnchant(ench, level, true);
         }
+        writeBack();
     }
 
     @Override
@@ -174,6 +204,7 @@ public class PatchBukkitItemStack extends ItemStack {
         if (level > 0 && this.meta != null) {
             this.meta.removeEnchant(ench);
         }
+        writeBack();
         return level;
     }
 
@@ -182,6 +213,7 @@ public class PatchBukkitItemStack extends ItemStack {
         if (this.meta != null) {
             this.meta.removeEnchantments();
         }
+        writeBack();
     }
 
     @Override
@@ -196,9 +228,11 @@ public class PatchBukkitItemStack extends ItemStack {
     public boolean editPersistentDataContainer(@NonNull Consumer<PersistentDataContainer> consumer) {
         ItemMeta current = getItemMetaInternal();
         if (current == null) {
+            writeBack();
             return false;
         }
         consumer.accept(current.getPersistentDataContainer());
+        writeBack();
         return true;
     }
 

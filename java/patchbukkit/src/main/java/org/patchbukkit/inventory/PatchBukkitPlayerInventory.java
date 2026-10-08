@@ -190,7 +190,7 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
         GetPlayerInventoryResponse resp = fetchInventory();
         int selected = resp.getSelectedSlot();
         if (selected >= 0 && selected < resp.getMainInventoryCount()) {
-            return fromProto(resp.getMainInventory(selected));
+            return mirror(fromProto(resp.getMainInventory(selected)), selected);
         }
         return ItemStack.empty();
     }
@@ -204,7 +204,7 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
 
     @Override
     public ItemStack getItemInOffHand() {
-        return fromProto(fetchInventory().getOffHand());
+        return mirror(fromProto(fetchInventory().getOffHand()), 40);
     }
 
     @Override
@@ -275,6 +275,18 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
 
     @Override
     public ItemStack getItem(int index) {
+        return mirror(getItemCopy(index), index);
+    }
+
+    /** Ties a stack read from {@code slot} to that slot (see {@link PatchBukkitItemStack#mirrorTo}). */
+    private ItemStack mirror(ItemStack stack, int slot) {
+        if (stack instanceof PatchBukkitItemStack pb && !stack.getType().isAir()) {
+            pb.mirrorTo(updated -> setItem(slot, updated));
+        }
+        return stack;
+    }
+
+    private ItemStack getItemCopy(int index) {
         GetPlayerInventoryResponse resp = fetchInventory();
         if (index >= 0 && index < resp.getMainInventoryCount()) {
             return fromProto(resp.getMainInventory(index));
