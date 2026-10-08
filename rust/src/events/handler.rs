@@ -3785,6 +3785,28 @@ fn is_blank_component(component: &pumpkin_util::text::TextComponent) -> bool {
 
 impl PatchBukkitEvent for pumpkin::plugin::player::player_join::PlayerJoinEvent {
     fn to_payload(&self, server: Arc<Server>) -> JvmEventPayload {
+        // Pumpkin applies the gamemode's abilities and then restores the saved ones, so a survival
+        // player can rejoin with a stale mayfly/flying flag. Vanilla clears those for survival and
+        // adventure, and plugins that keep flight enabled (e.g. Essentials) re-enable it from their
+        // own data while handling this same event.
+        let gamemode = self.player.gamemode.load();
+        if !matches!(
+            gamemode,
+            pumpkin_util::GameMode::Creative | pumpkin_util::GameMode::Spectator
+        ) {
+            let mut abilities = self
+                .player
+                .abilities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if abilities.allow_flying || abilities.flying {
+                abilities.allow_flying = false;
+                abilities.flying = false;
+                drop(abilities);
+                self.player.send_abilities_update();
+            }
+        }
+
         JvmEventPayload {
             event: Event {
                 data: Some(Data::PlayerJoin(PlayerJoinEvent {
