@@ -59,6 +59,13 @@ public class PatchBukkitRegistry<P, B extends Keyed> implements Registry<B> {
         this.factory = factory;
     }
 
+    @SuppressWarnings("unchecked")
+    private void fillVanillaEnchantments() {
+        for (PatchBukkitEnchantment ench : PatchBukkitEnchantment.createVanilla()) {
+            entries.putIfAbsent(ench.getKey(), (B) ench);
+        }
+    }
+
     public void ensureInitialized() {
         if (initialized) return;
         synchronized (this) {
@@ -128,9 +135,7 @@ public class PatchBukkitRegistry<P, B extends Keyed> implements Registry<B> {
                 // Do not reflectively autoDiscover MenuType.class because MenuType.<clinit> depends on Registry.MENU!
             } else if (RegistryKey.ENCHANTMENT.equals(registryKey)) {
                 // Enchantment.<clinit> depends on this registry, so never reflect on it.
-                for (PatchBukkitEnchantment ench : PatchBukkitEnchantment.createVanilla()) {
-                    entries.put(ench.getKey(), (B) ench);
-                }
+                fillVanillaEnchantments();
             } else if (RegistryKey.DAMAGE_TYPE.equals(registryKey) || "damage_type".equalsIgnoreCase(registryKey.key().value())) {
                 // Do not reflectively autoDiscover DamageType.class because DamageType.<clinit> depends on Registry.DAMAGE_TYPE!
                 populateDefaultDamageTypes();
@@ -245,6 +250,16 @@ public class PatchBukkitRegistry<P, B extends Keyed> implements Registry<B> {
         B value = entries.get(key);
         if (value != null) {
             return value;
+        }
+        if (RegistryKey.ENCHANTMENT.equals(registryKey)) {
+            // Creating the first enchantment runs Enchantment.<clinit>, which reads this
+            // registry before initialization has stored anything. Fill it now; the class
+            // initializer is already running on this thread, so this does not recurse.
+            fillVanillaEnchantments();
+            value = entries.get(key);
+            if (value != null) {
+                return value;
+            }
         }
 
         Set<NamespacedKey> fallbackSet = inFallback.get();
