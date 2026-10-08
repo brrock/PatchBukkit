@@ -305,4 +305,16 @@ message EntityActionResponse {
 message OpenPlayerInventoryRequest {
   patchbukkit.common.UUID viewer = 1;
   patchbukkit.common.UUID target = 2;
+  // Open the target's ender chest instead of their inventory.
+  bool ender_chest = 3;
+}
+
+message OpenWorkstationRequest {
+  patchbukkit.common.UUID viewer = 1;
+  // Bukkit InventoryType name: WORKBENCH, ANVIL, GRINDSTONE, STONECUTTER, LOOM, CARTOGRAPHY, SMITHING.
+  string kind = 2;
+}
+
+message OpenWorkstationResponse {
+  bool opened = 1;
 }

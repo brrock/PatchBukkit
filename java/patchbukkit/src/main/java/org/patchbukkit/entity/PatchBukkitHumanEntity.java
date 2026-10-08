@@ -63,7 +63,7 @@ public class PatchBukkitHumanEntity
     protected final PermissibleBase perm = new PermissibleBase(this);
     protected final PlayerInventory inventory = new org.patchbukkit.inventory.PatchBukkitPlayerInventory(this);
     protected final EntityEquipment equipment = new org.patchbukkit.inventory.PatchBukkitEntityEquipment(this);
-    protected final Inventory enderChest = new PatchBukkitInventory(this, 27, "Ender Chest");
+    protected final Inventory enderChest = new org.patchbukkit.inventory.PatchBukkitEnderChest(this);
     private ItemStack cursorItem = ItemStack.empty();
     private InventoryView openInventoryView;
     private final Set<NamespacedKey> discoveredRecipes = new HashSet<>();
@@ -563,9 +563,19 @@ public class PatchBukkitHumanEntity
                         .setViewer(BridgeUtils.convertUuid(getUniqueId()))
                         .setTarget(BridgeUtils.convertUuid(target.getUniqueId()))
                         .build());
-            } else if (inventory.getType() == org.bukkit.event.inventory.InventoryType.ENDER_CHEST
-                    || inventory == this.enderChest) {
-                NativeBridgeFfi.openEnderChest(BridgeUtils.convertUuid(getUniqueId()));
+            } else if (inventory instanceof org.patchbukkit.inventory.PatchBukkitEnderChest ec) {
+                NativeBridgeFfi.openPlayerInventory(
+                    patchbukkit.entity.OpenPlayerInventoryRequest.newBuilder()
+                        .setViewer(BridgeUtils.convertUuid(getUniqueId()))
+                        .setTarget(BridgeUtils.convertUuid(ec.getOwner().getUniqueId()))
+                        .setEnderChest(true)
+                        .build());
+            } else if (NativeBridgeFfi.openWorkstation(
+                    patchbukkit.entity.OpenWorkstationRequest.newBuilder()
+                        .setViewer(BridgeUtils.convertUuid(getUniqueId()))
+                        .setKind(inventory.getType().name())
+                        .build()).getOpened()) {
+                // opened by Pumpkin
             } else {
                 BridgeUtils.logBridgeFailure("openInventory",
                     new UnsupportedOperationException("opening " + inventory.getType() + " inventories"));

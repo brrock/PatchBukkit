@@ -85,6 +85,9 @@ service NativeBridge {
   rpc GetCooldown(patchbukkit.entity.GetCooldownRequest) returns (patchbukkit.entity.GetCooldownResponse);
 
   rpc OpenEnderChest(patchbukkit.common.UUID) returns (google.protobuf.Empty);
+  rpc OpenWorkstation(patchbukkit.entity.OpenWorkstationRequest) returns (patchbukkit.entity.OpenWorkstationResponse);
+  rpc GetEnderChest(patchbukkit.common.UUID) returns (patchbukkit.itemstack.EnderChestContents);
+  rpc SetEnderChestSlot(patchbukkit.itemstack.SetPlayerInventorySlotRequest) returns (google.protobuf.Empty);
   rpc OpenPlayerInventory(patchbukkit.entity.OpenPlayerInventoryRequest) returns (google.protobuf.Empty);
   rpc UpdateInventory(patchbukkit.common.UUID) returns (google.protobuf.Empty);
 

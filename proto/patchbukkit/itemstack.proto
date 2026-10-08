@@ -46,3 +46,7 @@ message SetPlayerEquipmentRequest {
   ItemStack item = 3;
 }
 
+
+message EnderChestContents {
+  repeated ItemStack items = 1;
+}

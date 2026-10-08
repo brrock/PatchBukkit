@@ -369,3 +369,32 @@ pub fn ffi_native_bridge_clear_player_inventory_impl(request: Uuid) -> Option<()
         eq_guard.clear();
     })
 }
+
+pub fn ffi_native_bridge_get_ender_chest_impl(
+    request: Uuid,
+) -> Option<crate::proto::patchbukkit::itemstack::EnderChestContents> {
+    use pumpkin_inventory::Inventory;
+    with_player(Some(&request), |player| {
+        let inv = player.ender_chest_inventory();
+        crate::proto::patchbukkit::itemstack::EnderChestContents {
+            items: (0..inv.size())
+                .map(|i| pumpkin_item_to_proto(&inv.get_stack(i)))
+                .collect(),
+        }
+    })
+}
+
+pub fn ffi_native_bridge_set_ender_chest_slot_impl(
+    request: SetPlayerInventorySlotRequest,
+) -> Option<()> {
+    use pumpkin_inventory::Inventory;
+    let slot = request.slot as usize;
+    let item = proto_item_to_pumpkin(request.item.as_ref());
+    with_player(request.uuid.as_ref(), |player| {
+        let inv = player.ender_chest_inventory();
+        if slot < inv.size() {
+            inv.set_stack(slot, item);
+            inv.mark_dirty();
+        }
+    })
+}

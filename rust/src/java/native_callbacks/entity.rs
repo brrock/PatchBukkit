@@ -739,32 +739,133 @@ pub fn ffi_native_bridge_open_ender_chest_impl(request: Uuid) -> Option<()> {
     })
 }
 
-/// Screen factory showing another player's inventory (hotbar row first, then armor
-/// and offhand) as a 9x6 chest, the way Bukkit's `openInventory(target.getInventory())` behaves.
+use pumpkin_inventory::screen_handler::{
+    InventoryPlayer, ScreenHandler, ScreenHandlerBehaviour, ScreenHandlerFactory,
+    SharedScreenHandler,
+};
+use pumpkin_inventory::slot::{NormalSlot, Slot};
+
+/// Number of slots of a player inventory: 36 main, 4 armor, 1 offhand.
+const PLAYER_INVENTORY_SLOTS: usize = 41;
+const INVSEE_ROWS: usize = 6;
+
+/// A filler slot that never accepts or gives items.
+struct LockedSlot {
+    inventory: std::sync::Arc<dyn pumpkin_inventory::Inventory>,
+    id: std::sync::atomic::AtomicU8,
+}
+
+impl Slot for LockedSlot {
+    fn get_inventory(&self) -> std::sync::Arc<dyn pumpkin_inventory::Inventory> {
+        self.inventory.clone()
+    }
+    fn get_index(&self) -> usize {
+        0
+    }
+    fn set_id(&self, id: usize) {
+        self.id.store(id as u8, std::sync::atomic::Ordering::Relaxed);
+    }
+    fn can_insert(&self, _stack: &pumpkin_data::item_stack::ItemStack) -> bool {
+        false
+    }
+    fn can_take_items(&self, _player: &dyn InventoryPlayer) -> bool {
+        false
+    }
+    fn mark_dirty(&self) {}
+}
+
+/// Another player's live inventory (hotbar row first, then armor and offhand) in a
+/// 9x6 chest. The 13 slots after the player's 41 are locked.
+struct InvseeScreenHandler {
+    behaviour: ScreenHandlerBehaviour,
+}
+
+impl InvseeScreenHandler {
+    fn new(
+        sync_id: u8,
+        viewer_inventory: &std::sync::Arc<pumpkin_inventory::player::player_inventory::PlayerInventory>,
+        target: std::sync::Arc<pumpkin_inventory::player::player_inventory::PlayerInventory>,
+    ) -> Self {
+        let mut handler = Self {
+            behaviour: ScreenHandlerBehaviour::new(
+                sync_id,
+                Some(pumpkin_data::screen::WindowType::Generic9x6),
+            ),
+        };
+        let target: std::sync::Arc<dyn pumpkin_inventory::Inventory> = target;
+        let filler: std::sync::Arc<dyn pumpkin_inventory::Inventory> =
+            std::sync::Arc::new(pumpkin_inventory::SimpleInventory::new(1));
+        for i in 0..INVSEE_ROWS * 9 {
+            if i < PLAYER_INVENTORY_SLOTS {
+                handler.add_slot(std::sync::Arc::new(NormalSlot::new(target.clone(), i)));
+            } else {
+                handler.add_slot(std::sync::Arc::new(LockedSlot {
+                    inventory: filler.clone(),
+                    id: std::sync::atomic::AtomicU8::new(0),
+                }));
+            }
+        }
+        let viewer: std::sync::Arc<dyn pumpkin_inventory::Inventory> = viewer_inventory.clone();
+        handler.add_player_slots(&viewer);
+        handler
+    }
+}
+
+impl ScreenHandler for InvseeScreenHandler {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+    fn get_behaviour(&self) -> &ScreenHandlerBehaviour {
+        &self.behaviour
+    }
+    fn get_behaviour_mut(&mut self) -> &mut ScreenHandlerBehaviour {
+        &mut self.behaviour
+    }
+    fn quick_move(
+        &mut self,
+        _player: &dyn InventoryPlayer,
+        slot_index: i32,
+    ) -> pumpkin_data::item_stack::ItemStack {
+        let empty = pumpkin_data::item_stack::ItemStack::EMPTY.clone();
+        let Some(slot) = self.get_behaviour().slots.get(slot_index as usize).cloned() else {
+            return empty;
+        };
+        let top = (INVSEE_ROWS * 9) as i32;
+        if (PLAYER_INVENTORY_SLOTS as i32..top).contains(&slot_index) || !slot.has_stack() {
+            return empty;
+        }
+        let mut stack = slot.get_stack();
+        let before = stack.clone();
+        let moved = if slot_index < top {
+            let end = self.get_behaviour().slots.len() as i32;
+            self.insert_item(&mut stack, top, end, true)
+        } else {
+            self.insert_item(&mut stack, 0, PLAYER_INVENTORY_SLOTS as i32, false)
+        };
+        if !moved {
+            return empty;
+        }
+        slot.set_stack(if stack.is_empty() { empty } else { stack });
+        before
+    }
+}
+
 struct PlayerInventoryScreenFactory {
     target: std::sync::Arc<pumpkin_inventory::player::player_inventory::PlayerInventory>,
     title: pumpkin_util::text::TextComponent,
 }
 
-impl pumpkin_inventory::screen_handler::ScreenHandlerFactory for PlayerInventoryScreenFactory {
+impl ScreenHandlerFactory for PlayerInventoryScreenFactory {
     fn create_screen_handler(
         &self,
         sync_id: u8,
         player_inventory: &std::sync::Arc<pumpkin_inventory::player::player_inventory::PlayerInventory>,
-        player: &dyn pumpkin_inventory::screen_handler::InventoryPlayer,
-    ) -> Option<pumpkin_inventory::screen_handler::SharedScreenHandler> {
-        // 41 player slots (36 main + armor + offhand) padded to a 9x6 chest.
-        let padded: std::sync::Arc<dyn pumpkin_inventory::Inventory> =
-            pumpkin_inventory::double::DoubleInventory::new(
-                self.target.clone(),
-                std::sync::Arc::new(pumpkin_inventory::SimpleInventory::new(13)),
-            );
-        let handler = pumpkin_inventory::generic_container_screen_handler::create_generic_9x6(
-            sync_id,
-            player_inventory,
-            padded,
-            player,
-        );
+        _player: &dyn InventoryPlayer,
+    ) -> Option<SharedScreenHandler> {
+        let handler = InvseeScreenHandler::new(sync_id, player_inventory, self.target.clone());
         Some(std::sync::Arc::new(std::sync::Mutex::new(handler)))
     }
 
@@ -778,6 +879,16 @@ pub fn ffi_native_bridge_open_player_inventory_impl(
 ) -> Option<()> {
     let target = with_player(request.target.as_ref(), |p| p)?;
     with_player(request.viewer.as_ref(), |viewer| {
+        if request.ender_chest {
+            viewer.open_handled_screen(
+                &pumpkin::block::blocks::ender_chest::EnderChestScreenFactory {
+                    inventory: target.ender_chest_inventory().clone(),
+                    tracker: None,
+                },
+                None,
+            );
+            return;
+        }
         if viewer.gameprofile.id == target.gameprofile.id {
             viewer.on_screen_handler_opened(&viewer.player_screen_handler);
             return;
@@ -793,5 +904,91 @@ pub fn ffi_native_bridge_open_player_inventory_impl(
 pub fn ffi_native_bridge_update_inventory_impl(request: Uuid) -> Option<()> {
     with_player(Some(&request), |player| {
         player.on_screen_handler_opened(&player.player_screen_handler);
+    })
+}
+
+/// A crafting-station screen opened without a block (Bukkit `openWorkbench`, `openAnvil`, ...).
+struct WorkstationScreenFactory {
+    kind: String,
+    recipes: std::sync::Arc<pumpkin::server::RecipeManager>,
+}
+
+impl ScreenHandlerFactory for WorkstationScreenFactory {
+    fn create_screen_handler(
+        &self,
+        sync_id: u8,
+        inv: &std::sync::Arc<pumpkin_inventory::player::player_inventory::PlayerInventory>,
+        _player: &dyn InventoryPlayer,
+    ) -> Option<SharedScreenHandler> {
+        use pumpkin_inventory as pi;
+        use std::sync::{Arc, Mutex};
+        let handler: SharedScreenHandler = match self.kind.as_str() {
+            "WORKBENCH" | "CRAFTING" => Arc::new(Mutex::new(
+                pi::crafting::crafting_screen_handler::CraftingTableScreenHandler::new(
+                    sync_id,
+                    inv,
+                    Some(self.recipes.clone()),
+                ),
+            )),
+            "ANVIL" => Arc::new(Mutex::new(pi::anvil::AnvilScreenHandler::new(
+                sync_id,
+                inv,
+                Arc::new(pi::SimpleInventory::new(3)),
+            ))),
+            "GRINDSTONE" => Arc::new(Mutex::new(
+                pi::grindstone_screen_handler::GrindstoneScreenHandler::new(
+                    sync_id,
+                    inv,
+                    Arc::new(pi::SimpleInventory::new(3)),
+                ),
+            )),
+            "STONECUTTER" => Arc::new(Mutex::new(
+                pi::stonecutter_screen_handler::StonecutterScreenHandler::new(sync_id, inv),
+            )),
+            "LOOM" => Arc::new(Mutex::new(pi::loom_screen_handler::LoomScreenHandler::new(
+                sync_id, inv,
+            ))),
+            "CARTOGRAPHY" => Arc::new(Mutex::new(
+                pi::cartography_table_screen_handler::CartographyTableScreenHandler::new(
+                    sync_id, inv,
+                ),
+            )),
+            "SMITHING" => Arc::new(Mutex::new(
+                pi::smithing_table_screen_handler::SmithingTableScreenHandler::new(sync_id, inv),
+            )),
+            _ => return None,
+        };
+        Some(handler)
+    }
+
+    fn get_display_name(&self) -> pumpkin_util::text::TextComponent {
+        let key = match self.kind.as_str() {
+            "WORKBENCH" | "CRAFTING" => "container.crafting",
+            "ANVIL" => "container.repair",
+            "GRINDSTONE" => "container.grindstone_title",
+            "STONECUTTER" => "container.stonecutter",
+            "LOOM" => "container.loom",
+            "CARTOGRAPHY" => "container.cartography_table",
+            _ => "container.upgrade",
+        };
+        pumpkin_util::text::TextComponent::translate(key, [])
+    }
+}
+
+pub fn ffi_native_bridge_open_workstation_impl(
+    request: crate::proto::patchbukkit::entity::OpenWorkstationRequest,
+) -> Option<crate::proto::patchbukkit::entity::OpenWorkstationResponse> {
+    const KINDS: [&str; 8] = [
+        "WORKBENCH", "CRAFTING", "ANVIL", "GRINDSTONE", "STONECUTTER", "LOOM", "CARTOGRAPHY",
+        "SMITHING",
+    ];
+    if !KINDS.contains(&request.kind.as_str()) {
+        return Some(crate::proto::patchbukkit::entity::OpenWorkstationResponse { opened: false });
+    }
+    let recipes = CALLBACK_CONTEXT.get()?.plugin_context.server.recipe_manager.clone();
+    with_player(request.viewer.as_ref(), |viewer| {
+        let factory = WorkstationScreenFactory { kind: request.kind.clone(), recipes };
+        let opened = viewer.open_handled_screen(&factory, None).is_some();
+        crate::proto::patchbukkit::entity::OpenWorkstationResponse { opened }
     })
 }
