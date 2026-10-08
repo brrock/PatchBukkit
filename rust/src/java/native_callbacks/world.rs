@@ -506,16 +506,7 @@ pub fn ffi_native_bridge_spawn_world_entity_impl(
                 uuid_int_array(new_uuid),
                 item.amount.min(99)
             );
-            let server = ctx.plugin_context.server.clone();
-            let target_world = world.clone();
-            ctx.runtime.spawn(async move {
-                let mut source = pumpkin::command::CommandSender::Console.into_source(&server);
-                source.silent = true;
-                source.world = Some(target_world);
-                if let Err(e) = server.command_dispatcher.load().execute_input(&command, &source) {
-                    tracing::warn!("PatchBukkit: dropping item failed ({command}): {e:?}");
-                }
-            });
+            summon(ctx, world.clone(), command);
             return Some(SpawnWorldEntityResponse {
                 entity_uuid: Some(ProtoUuid {
                     value: new_uuid.to_string(),
@@ -527,33 +518,51 @@ pub fn ffi_native_bridge_spawn_world_entity_impl(
         _ => {}
     }
 
-    let entity_type: &'static pumpkin_data::entity::EntityType =
-        match request.entity_type.to_uppercase().as_str() {
-            "LIGHTNING_BOLT" | "LIGHTNING" => &pumpkin_data::entity::EntityType::LIGHTNING_BOLT,
-            "ITEM" | "DROPPED_ITEM" => &pumpkin_data::entity::EntityType::ITEM,
-            "ZOMBIE" => &pumpkin_data::entity::EntityType::ZOMBIE,
-            "SKELETON" => &pumpkin_data::entity::EntityType::SKELETON,
-            "CREEPER" => &pumpkin_data::entity::EntityType::CREEPER,
-            "COW" => &pumpkin_data::entity::EntityType::COW,
-            "PIG" => &pumpkin_data::entity::EntityType::PIG,
-            "SHEEP" => &pumpkin_data::entity::EntityType::SHEEP,
-            _ => &pumpkin_data::entity::EntityType::PIG,
-        };
-    let entity = pumpkin::entity::r#type::from_type(entity_type, pos, &world, new_uuid);
-    let entity_id = entity.get_entity().entity_id;
-
-    let w = world.clone();
-    ctx.runtime.spawn(async move {
-        w.spawn_entity(entity);
-    });
+    // Summon through the server's own command so the entity is built and ticked by the server's
+    // code; one built from this plugin's copy of Pumpkin breaks on component TypeIds.
+    let name = match request.entity_type.to_lowercase().as_str() {
+        "lightning" => "lightning_bolt".to_string(),
+        "dropped_item" => "item".to_string(),
+        other => other.strip_prefix("minecraft:").unwrap_or(other).to_string(),
+    };
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+        return Some(SpawnWorldEntityResponse {
+            entity_uuid: None,
+            success: false,
+            entity_id: 0,
+        });
+    }
+    let command = format!(
+        "summon minecraft:{name} {} {} {} {{UUID:{},Rotation:[{}f,{}f]}}",
+        request.x,
+        request.y,
+        request.z,
+        uuid_int_array(new_uuid),
+        request.yaw,
+        request.pitch
+    );
+    summon(ctx, world, command);
 
     Some(SpawnWorldEntityResponse {
         entity_uuid: Some(ProtoUuid {
             value: new_uuid.to_string(),
         }),
         success: true,
-        entity_id,
+        entity_id: 0,
     })
+}
+
+/// Runs a /summon line as a silent console source in the given world, off the caller's thread.
+fn summon(ctx: &'static crate::java::native_callbacks::CallbackContext, world: Arc<pumpkin::world::World>, command: String) {
+    let server = ctx.plugin_context.server.clone();
+    ctx.runtime.spawn(async move {
+        let mut source = pumpkin::command::CommandSender::Console.into_source(&server);
+        source.silent = true;
+        source.world = Some(world);
+        if let Err(e) = server.command_dispatcher.load().execute_input(&command, &source) {
+            tracing::warn!("PatchBukkit: summon failed ({command}): {e:?}");
+        }
+    });
 }
 
 pub fn ffi_native_bridge_create_world_explosion_impl(

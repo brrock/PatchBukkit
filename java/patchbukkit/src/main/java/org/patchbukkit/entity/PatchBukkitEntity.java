@@ -128,7 +128,8 @@ public class PatchBukkitEntity implements Entity {
         } else if (type == EntityType.EXPERIENCE_ORB) {
             entity = new PatchBukkitExperienceOrb(uuid);
         } else {
-            entity = new PatchBukkitEntity(uuid, type != null ? type.name() : "entity", entityId);
+            PatchBukkitEntity typed = TypedEntityClasses.create(type, uuid, entityId);
+            entity = typed != null ? typed : new PatchBukkitEntity(uuid, type != null ? type.name() : "entity", entityId);
         }
         entity.entityType = type != null ? type : EntityType.UNKNOWN;
         entity.cachedLocation = loc != null ? loc.clone() : new Location(null, 0, 0, 0);
@@ -622,15 +623,16 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public boolean isPersistent() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isPersistent'");
+        return this.persistent;
     }
 
     @Override
     public void setPersistent(boolean persistent) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setPersistent'");
+        this.persistent = persistent;
     }
+
+    // Bukkit entities persist with their chunk unless a plugin says otherwise.
+    private volatile boolean persistent = true;
 
     @Override
     public @Nullable Entity getPassenger() {

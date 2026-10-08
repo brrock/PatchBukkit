@@ -239,6 +239,14 @@ public class PatchBukkitRegionAccessor implements RegionAccessor {
         CreatureSpawnEvent.@NotNull SpawnReason reason
     ) throws IllegalArgumentException {
         T entity = createEntity(location, clazz);
+        if (!(entity instanceof org.patchbukkit.entity.PatchBukkitExperienceOrb)
+            && !(entity instanceof org.bukkit.entity.Player)) {
+            // Put the entity in the world; the server answers with its uuid and id.
+            Entity spawned = spawnEntity(location, entity.getType(), true);
+            if (clazz.isInstance(spawned)) {
+                entity = clazz.cast(spawned);
+            }
+        }
         if (function != null) {
             function.accept(entity);
         }

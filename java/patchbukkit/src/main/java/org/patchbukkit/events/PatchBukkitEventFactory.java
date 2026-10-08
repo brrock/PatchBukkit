@@ -1283,7 +1283,13 @@ public class PatchBukkitEventFactory {
             if (defaultWorld != null) {
                 argsList.add(defaultWorld);
             }
-            return instantiateBukkitEvent(clazz, argsList.toArray());
+            org.bukkit.event.Event created = instantiateBukkitEvent(clazz, argsList.toArray());
+            // An entity event whose entity could not be resolved would hand plugins a null
+            // getEntity(), which Bukkit never does; skip it instead.
+            if (created instanceof org.bukkit.event.entity.EntityEvent entityEvent && entityEvent.getEntity() == null) {
+                return null;
+            }
+            return created;
         } catch (Throwable t) {
             return null;
         }
