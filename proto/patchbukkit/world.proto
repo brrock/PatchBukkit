@@ -226,3 +226,62 @@ message GetForceLoadedChunksResponse {
 message SaveWorldRequest {
   patchbukkit.common.UUID world_uuid = 1;
 }
+
+// Reads every block state id in the inclusive box [min, max], ordered x fastest, then z, then y.
+message GetBlockStatesRequest {
+  patchbukkit.common.UUID world_uuid = 1;
+  int32 min_x = 2;
+  int32 min_y = 3;
+  int32 min_z = 4;
+  int32 max_x = 5;
+  int32 max_y = 6;
+  int32 max_z = 7;
+}
+
+message GetBlockStatesResponse {
+  repeated uint32 state_ids = 1;
+}
+
+// Sets many blocks at once. positions are packed like BlockPos#asLong
+// (x: 26 bits, z: 26 bits, y: 12 bits); state_ids[i] belongs to positions[i].
+// Replaced containers are removed without dropping their contents.
+message SetBlockStatesRequest {
+  patchbukkit.common.UUID world_uuid = 1;
+  repeated int64 positions = 2;
+  repeated uint32 state_ids = 3;
+  bool notify_neighbors = 4;
+  bool skip_placement_callbacks = 5;
+  bool update_lighting = 6;
+}
+
+message SetBlockStatesResponse {
+  int32 changed = 1;
+}
+
+// Every block state the server knows, indexed by state id, as "minecraft:block[prop=value,...]".
+message GetBlockStateRegistryResponse {
+  repeated string states = 1;
+  // Default state id of every block, in block registry order.
+  repeated uint32 default_state_ids = 2;
+}
+
+message GetBiomesRequest {
+  patchbukkit.common.UUID world_uuid = 1;
+  repeated int64 positions = 2;
+}
+
+message GetBiomesResponse {
+  repeated string biomes = 1;
+}
+
+// Sets the biome at each position (biomes are stored per 4x4x4 cell, like vanilla).
+message SetBiomesRequest {
+  patchbukkit.common.UUID world_uuid = 1;
+  repeated int64 positions = 2;
+  repeated string biomes = 3;
+}
+
+message RefreshChunksRequest {
+  patchbukkit.common.UUID world_uuid = 1;
+  repeated ChunkCoordProto chunks = 2;
+}

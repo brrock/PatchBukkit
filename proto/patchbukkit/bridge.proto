@@ -88,6 +88,12 @@ service NativeBridge {
 
   rpc GetBlockData(patchbukkit.world.GetBlockDataRequest) returns (patchbukkit.world.GetBlockDataResponse);
   rpc SetBlockData(patchbukkit.world.SetBlockDataRequest) returns (google.protobuf.Empty);
+  rpc GetBlockStates(patchbukkit.world.GetBlockStatesRequest) returns (patchbukkit.world.GetBlockStatesResponse);
+  rpc SetBlockStates(patchbukkit.world.SetBlockStatesRequest) returns (patchbukkit.world.SetBlockStatesResponse);
+  rpc GetBlockStateRegistry(patchbukkit.common.EmptyRequest) returns (patchbukkit.world.GetBlockStateRegistryResponse);
+  rpc GetBiomes(patchbukkit.world.GetBiomesRequest) returns (patchbukkit.world.GetBiomesResponse);
+  rpc SetBiomes(patchbukkit.world.SetBiomesRequest) returns (google.protobuf.Empty);
+  rpc RefreshChunks(patchbukkit.world.RefreshChunksRequest) returns (google.protobuf.Empty);
   rpc SpawnParticle(patchbukkit.world.SpawnParticleRequest) returns (google.protobuf.Empty);
   rpc GetWorlds(patchbukkit.common.EmptyRequest) returns (patchbukkit.world.GetWorldsResponse);
   rpc GetWorldBorder(patchbukkit.world.GetWorldBorderRequest) returns (patchbukkit.world.WorldBorderData);

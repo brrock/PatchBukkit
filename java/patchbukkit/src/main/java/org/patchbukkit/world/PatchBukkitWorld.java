@@ -332,6 +332,10 @@ public class PatchBukkitWorld extends PatchBukkitRegionAccessor implements World
 
     @Override
     public boolean refreshChunk(int x, int z) {
+        NativeBridgeFfi.refreshChunks(patchbukkit.world.RefreshChunksRequest.newBuilder()
+            .setWorldUuid(BridgeUtils.convertUuid(getUID()))
+            .addChunks(patchbukkit.world.ChunkCoordProto.newBuilder().setX(x).setZ(z))
+            .build());
         return true;
     }
 

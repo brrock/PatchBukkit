@@ -61,7 +61,7 @@ patchbukkit-plugins/
 patchbukkit-libs/
 run/
 **/run/
-world/
+/world/
 world_nether/
 world_the_end/
 *.local.nbt

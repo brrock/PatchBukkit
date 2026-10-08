@@ -41,6 +41,9 @@ pub use entity::*;
 pub mod world;
 pub use world::*;
 
+pub mod blocks;
+pub use blocks::*;
+
 pub mod itemstack;
 pub use itemstack::*;
 
