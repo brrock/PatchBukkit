@@ -40,4 +40,11 @@ public class BridgeUtils {
         double z = location.hasPosition() ? location.getPosition().getZ() : 0.0;
         return new org.bukkit.Location(world, x, y, z, location.getYaw(), location.getPitch());
     }
+
+    /**
+     * Logs a failed call into the Rust bridge instead of silently dropping it.
+     */
+    public static void logBridgeFailure(String operation, Throwable t) {
+        java.util.logging.Logger.getLogger("PatchBukkit").log(java.util.logging.Level.WARNING, "Bridge call " + operation + " failed", t);
+    }
 }

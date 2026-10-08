@@ -160,7 +160,7 @@ public class PatchBukkitHumanEntity
                 .setIsOp(value)
                 .build();
             NativeBridgeFfi.setOp(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setOp", t); }
         this.perm.recalculatePermissions();
     }
 
@@ -231,7 +231,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return GameMode.getByValue(resp.getGamemode());
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getGameMode", t); }
         return GameMode.SURVIVAL;
     }
 
@@ -244,7 +244,7 @@ public class PatchBukkitHumanEntity
                 .setGamemode(mode.getValue())
                 .build();
             NativeBridgeFfi.setGamemode(request);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setGameMode", t); }
     }
 
     @Override
@@ -254,7 +254,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getIsSneaking();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isSneaking", t); }
         return false;
     }
 
@@ -266,7 +266,7 @@ public class PatchBukkitHumanEntity
                 .setSneaking(sneaking)
                 .build();
             NativeBridgeFfi.setSneaking(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setSneaking", t); }
     }
 
     public boolean isSprinting() {
@@ -275,7 +275,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getIsSprinting();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isSprinting", t); }
         return false;
     }
 
@@ -286,7 +286,7 @@ public class PatchBukkitHumanEntity
                 .setSprinting(sprinting)
                 .build();
             NativeBridgeFfi.setSprinting(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setSprinting", t); }
     }
 
     @Override
@@ -296,7 +296,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getIsGliding();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isGliding", t); }
         return false;
     }
 
@@ -311,7 +311,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getIsSwimming();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isSwimming", t); }
         return false;
     }
 
@@ -326,7 +326,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getIsSleeping();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isSleeping", t); }
         return false;
     }
 
@@ -377,7 +377,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getFoodLevel();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getFoodLevel", t); }
         return 20;
     }
 
@@ -389,7 +389,7 @@ public class PatchBukkitHumanEntity
                 .setFoodLevel(value)
                 .build();
             NativeBridgeFfi.setFoodLevel(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setFoodLevel", t); }
     }
 
     @Override
@@ -399,7 +399,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getSaturation();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getSaturation", t); }
         return 5.0f;
     }
 
@@ -411,7 +411,7 @@ public class PatchBukkitHumanEntity
                 .setSaturation(value)
                 .build();
             NativeBridgeFfi.setSaturation(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setSaturation", t); }
     }
 
     @Override
@@ -421,7 +421,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getExhaustion();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getExhaustion", t); }
         return 0.0f;
     }
 
@@ -433,7 +433,7 @@ public class PatchBukkitHumanEntity
                 .setExhaustion(value)
                 .build();
             NativeBridgeFfi.setExhaustion(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setExhaustion", t); }
     }
 
     @Override
@@ -486,7 +486,7 @@ public class PatchBukkitHumanEntity
                 .build();
             var resp = NativeBridgeFfi.getCooldown(req);
             if (resp != null) return resp.getIsOnCooldown();
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("hasCooldown", t); }
         return this.cooldowns.getOrDefault(material, 0) > 0;
     }
 
@@ -500,7 +500,7 @@ public class PatchBukkitHumanEntity
                 .build();
             var resp = NativeBridgeFfi.getCooldown(req);
             if (resp != null) return (int) (resp.getCooldown() * 100);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getCooldown", t); }
         return this.cooldowns.getOrDefault(material, 0);
     }
 
@@ -515,7 +515,7 @@ public class PatchBukkitHumanEntity
                 .setDurationTicks(ticks)
                 .build();
             NativeBridgeFfi.setCooldown(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setCooldown", t); }
     }
 
     @Override
@@ -557,7 +557,7 @@ public class PatchBukkitHumanEntity
         this.openInventoryView = new org.patchbukkit.inventory.PatchBukkitInventoryView(this, inventory);
         try {
             NativeBridgeFfi.openEnderChest(BridgeUtils.convertUuid(getUniqueId()));
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("openInventory", t); }
         return this.openInventoryView;
     }
 

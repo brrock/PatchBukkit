@@ -347,7 +347,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setMessage(message)
                 .build();
             NativeBridgeFfi.sendMessage(request);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("sendMessage", t); }
     }
 
     @Override
@@ -387,7 +387,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setMessage(message)
                 .build();
             NativeBridgeFfi.sendActionBar(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("sendActionBar", t); }
     }
 
     @Override
@@ -437,7 +437,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setDisplayName(this.displayName)
                 .build();
             NativeBridgeFfi.setDisplayName(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setDisplayName", t); }
     }
 
     @Override
@@ -464,7 +464,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setListName(this.playerListName)
                 .build();
             NativeBridgeFfi.setPlayerListName(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setPlayerListName", t); }
     }
 
     @Override
@@ -508,7 +508,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setFooter(this.playerListFooter)
                 .build();
             NativeBridgeFfi.setPlayerListHeaderFooter(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setPlayerListHeaderFooter", t); }
     }
 
     @Override
@@ -572,7 +572,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setMessage(kickMsg)
                 .build();
             NativeBridgeFfi.kickPlayer(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("kickPlayer", t); }
     }
 
     @Override
@@ -609,7 +609,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setFadeOut(fadeOut)
                 .build();
             NativeBridgeFfi.sendTitle(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("sendTitle", t); }
     }
 
     @Override
@@ -683,7 +683,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
     public void resetTitle() {
         try {
             NativeBridgeFfi.resetTitle(BridgeUtils.convertUuid(getUniqueId()));
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("resetTitle", t); }
     }
 
     @Override
@@ -712,7 +712,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                     .build())
                 .build();
             NativeBridgeFfi.setCompassTarget(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setCompassTarget", t); }
     }
 
     @Override
@@ -723,7 +723,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return new Location(getWorld(), resp.getX(), resp.getY(), resp.getZ());
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getCompassTarget", t); }
         return getWorld().getSpawnLocation();
     }
 
@@ -734,7 +734,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return BridgeUtils.convertLocation(resp);
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getBedSpawnLocation", t); }
         return getWorld().getSpawnLocation();
     }
 
@@ -767,7 +767,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setForce(force)
                 .build();
             NativeBridgeFfi.setRespawnPoint(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setRespawnLocation", t); }
     }
 
     @Override
@@ -793,7 +793,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setRelative(relative)
                 .build();
             NativeBridgeFfi.setPlayerTime(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setPlayerTime", t); }
     }
 
     @Override
@@ -820,7 +820,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
         this.playerTimeRelative = true;
         try {
             NativeBridgeFfi.resetPlayerTime(BridgeUtils.convertUuid(getUniqueId()));
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("resetPlayerTime", t); }
     }
 
     @Override
@@ -832,7 +832,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setWeather(type == WeatherType.DOWNFALL ? 1 : 0)
                 .build();
             NativeBridgeFfi.setPlayerWeather(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setPlayerWeather", t); }
     }
 
     @Override
@@ -845,7 +845,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
         this.playerWeather = null;
         try {
             NativeBridgeFfi.resetPlayerWeather(BridgeUtils.convertUuid(getUniqueId()));
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("resetPlayerWeather", t); }
     }
 
     // --- Sounds ---
@@ -874,7 +874,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setCategory(category != null ? category.name().toLowerCase() : "")
                 .build();
             NativeBridgeFfi.stopSound(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("stopSound", t); }
     }
 
     @Override
@@ -927,7 +927,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setSeed(seed)
                 .build();
             NativeBridgeFfi.playerPlaySound(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("playSound", t); }
     }
 
     @Override
@@ -970,7 +970,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setSeed(seed)
                 .build();
             NativeBridgeFfi.playerEntityPlaySound(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("playSound", t); }
     }
 
     // --- Block Changes & Updates ---
@@ -992,7 +992,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setBlockState(block.getAsString())
                 .build();
             NativeBridgeFfi.sendBlockChange(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("sendBlockChange", t); }
     }
 
     @Override
@@ -1076,7 +1076,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setRequired(required)
                 .build();
             NativeBridgeFfi.sendResourcePack(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setResourcePack", t); }
     }
 
     @Override
@@ -1125,7 +1125,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return new InetSocketAddress(resp.getAddress(), resp.getPort());
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getAddress", t); }
         return new InetSocketAddress("127.0.0.1", 25565);
     }
 
@@ -1141,7 +1141,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return resp.getPing();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getPing", t); }
         return 0;
     }
 
@@ -1152,7 +1152,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return resp.getClientBrand();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getClientBrandName", t); }
         return "vanilla";
     }
 
@@ -1193,7 +1193,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return resp.getAllowFlying();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getAllowFlight", t); }
         return false;
     }
 
@@ -1208,7 +1208,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setUuid(uuid)
                 .setAbilities(builder.build())
                 .build());
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setAllowFlight", t); }
     }
 
     @Override
@@ -1218,7 +1218,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return resp.getFlying();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isFlying", t); }
         return false;
     }
 
@@ -1233,7 +1233,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setUuid(uuid)
                 .setAbilities(builder.build())
                 .build());
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setFlying", t); }
     }
 
     @Override
@@ -1243,7 +1243,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return resp.getFlySpeed();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getFlySpeed", t); }
         return 0.1f;
     }
 
@@ -1261,7 +1261,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setUuid(uuid)
                 .setAbilities(builder.build())
                 .build());
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setFlySpeed", t); }
     }
 
     @Override
@@ -1271,7 +1271,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return resp.getWalkSpeed();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getWalkSpeed", t); }
         return 0.2f;
     }
 
@@ -1289,7 +1289,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setUuid(uuid)
                 .setAbilities(builder.build())
                 .build());
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setWalkSpeed", t); }
     }
 
     @Override
@@ -1319,7 +1319,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return resp.getLevel();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getLevel", t); }
         return 0;
     }
 
@@ -1333,7 +1333,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setTotalExperience(getTotalExperience())
                 .build();
             NativeBridgeFfi.setExperience(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setLevel", t); }
     }
 
     @Override
@@ -1343,7 +1343,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return resp.getProgress();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getExp", t); }
         return 0.0f;
     }
 
@@ -1357,7 +1357,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setTotalExperience(getTotalExperience())
                 .build();
             NativeBridgeFfi.setExperience(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setExp", t); }
     }
 
     @Override
@@ -1367,7 +1367,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
             if (resp != null) {
                 return resp.getTotalExperience();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getTotalExperience", t); }
         return 0;
     }
 
@@ -1381,7 +1381,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setTotalExperience(exp)
                 .build();
             NativeBridgeFfi.setExperience(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setTotalExperience", t); }
     }
 
     @Override
@@ -1433,7 +1433,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setTotalExperience(getTotalExperience())
                 .build();
             NativeBridgeFfi.setExperience(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("sendExperienceChange", t); }
     }
 
     @Override
@@ -1462,7 +1462,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setValue(0.0f)
                 .build();
             NativeBridgeFfi.sendGameEvent(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("showDemoScreen", t); }
     }
 
     @Override
@@ -1475,7 +1475,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setValue(1.0f)
                 .build();
             NativeBridgeFfi.sendGameEvent(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("showWinScreen", t); }
     }
 
     @Override
@@ -1497,7 +1497,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .setValue(0.0f)
                 .build();
             NativeBridgeFfi.sendGameEvent(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("showElderGuardian", t); }
     }
 
     @Override
@@ -1787,7 +1787,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
     public void updateInventory() {
         try {
             NativeBridgeFfi.updateInventory(BridgeUtils.convertUuid(getUniqueId()));
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("updateInventory", t); }
     }
 
     @Override
