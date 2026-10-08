@@ -563,7 +563,8 @@ public class PatchBukkitHumanEntity
                         .setViewer(BridgeUtils.convertUuid(getUniqueId()))
                         .setTarget(BridgeUtils.convertUuid(target.getUniqueId()))
                         .build());
-            } else if (inventory.getType() == org.bukkit.event.inventory.InventoryType.ENDER_CHEST) {
+            } else if (inventory.getType() == org.bukkit.event.inventory.InventoryType.ENDER_CHEST
+                    || inventory == this.enderChest) {
                 NativeBridgeFfi.openEnderChest(BridgeUtils.convertUuid(getUniqueId()));
             } else {
                 BridgeUtils.logBridgeFailure("openInventory",

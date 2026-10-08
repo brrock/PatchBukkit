@@ -30,6 +30,9 @@ public class PatchBukkitEnchantment extends Enchantment {
     private record Def(String key, String legacyName, int maxLevel, EnchantmentTarget target,
                        boolean treasure, boolean cursed, int weight, int anvilCost) {}
 
+    // Held outside this class: Enchantment.<clinit> (our superclass) reads the
+    // registry, which calls createVanilla() before this class's statics are set.
+    private static final class Defs {
     private static final List<Def> VANILLA = List.of(
         new Def("protection", "PROTECTION_ENVIRONMENTAL", 4, EnchantmentTarget.ARMOR, false, false, 10, 1),
         new Def("fire_protection", "PROTECTION_FIRE", 4, EnchantmentTarget.ARMOR, false, false, 5, 2),
@@ -75,9 +78,10 @@ public class PatchBukkitEnchantment extends Enchantment {
         new Def("swift_sneak", "SWIFT_SNEAK", 3, EnchantmentTarget.ARMOR_LEGS, true, false, 1, 8),
         new Def("lunge", "LUNGE", 3, EnchantmentTarget.WEAPON, false, false, 5, 2)
     );
+    }
 
     public static List<PatchBukkitEnchantment> createVanilla() {
-        return VANILLA.stream().map(PatchBukkitEnchantment::new).toList();
+        return Defs.VANILLA.stream().map(PatchBukkitEnchantment::new).toList();
     }
 
     private final Def def;
