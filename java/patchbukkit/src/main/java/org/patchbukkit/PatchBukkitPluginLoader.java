@@ -122,6 +122,17 @@ public class PatchBukkitPluginLoader implements PluginLoader {
         }
     }
 
+    /** Called from Rust on shutdown: disables every plugin in reverse load order. */
+    public static void disableAllPlugins() {
+        try {
+            if (PatchBukkitPluginManager.unwrap(org.bukkit.Bukkit.getPluginManager()) instanceof PatchBukkitPluginManager pm) {
+                pm.disablePlugins();
+            }
+        } catch (Throwable t) {
+            LOGGER.log(Level.SEVERE, "[PatchBukkit] Failed to disable plugins", t);
+        }
+    }
+
     public static boolean disablePlugin(String pluginName) {
         try {
             if (PatchBukkitPluginManager.unwrap(org.bukkit.Bukkit.getPluginManager()) instanceof PatchBukkitPluginManager pm) {

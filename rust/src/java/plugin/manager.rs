@@ -320,7 +320,13 @@ impl PluginManager {
         Ok(())
     }
 
-    pub fn disable_all_plugins(&mut self, _env: &mut Env) -> Result<()> {
+    pub fn disable_all_plugins(&mut self, env: &mut Env) -> Result<()> {
+        env.call_static_method(
+            jni::jni_str!("org/patchbukkit/loader/PatchBukkitPluginLoader"),
+            jni::jni_str!("disableAllPlugins"),
+            jni::jni_sig!("()V"),
+            &[],
+        )?;
         Ok(())
     }
 
