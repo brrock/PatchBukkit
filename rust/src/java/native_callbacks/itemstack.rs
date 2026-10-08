@@ -50,6 +50,52 @@ fn read_enchantments(stack: &PumpkinItemStack) -> Vec<(String, i32)> {
     out
 }
 
+/// Reads name, lore, damage, unbreakable and dye colour from a stack's patch through
+/// `write_data` (see [`read_enchantments`] for why nothing is downcast).
+fn read_meta(stack: &PumpkinItemStack) -> ProtoItemStack {
+    let mut out = ProtoItemStack::default();
+    for (component, value) in &stack.patch {
+        let Some(value) = value else { continue };
+        let data = value.write_data();
+        match *component {
+            DataComponent::CustomName => {
+                if let NbtTag::String(name) = data {
+                    out.custom_name = Some(name.to_string());
+                }
+            }
+            DataComponent::Lore => {
+                if let NbtTag::List(lines) = data {
+                    out.lore = lines
+                        .iter()
+                        .filter_map(NbtTag::extract_string)
+                        .map(ToString::to_string)
+                        .collect();
+                }
+            }
+            DataComponent::Damage => out.damage = data.extract_int().unwrap_or(0),
+            DataComponent::Unbreakable => out.unbreakable = true,
+            DataComponent::DyedColor => out.dyed_color = data.extract_int(),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Quotes a string as an SNBT string literal.
+fn snbt_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 fn pumpkin_item_to_proto(stack: &PumpkinItemStack) -> ProtoItemStack {
     if stack.is_empty() {
         ProtoItemStack {
@@ -68,6 +114,7 @@ fn pumpkin_item_to_proto(stack: &PumpkinItemStack) -> ProtoItemStack {
             r#type,
             amount: u32::from(stack.item_count),
             enchantments: read_enchantments(stack).into_iter().collect(),
+            ..read_meta(stack)
         }
     }
 }
@@ -121,6 +168,7 @@ fn server_item_parser() -> Option<ServerArgType> {
 /// Builds the `item[components]` string understood by `ItemStackArgumentType`.
 fn item_spec(key: &str, proto: &ProtoItemStack) -> String {
     let mut spec = format!("minecraft:{key}");
+    let mut components: Vec<String> = Vec::new();
     let mut enchants: Vec<_> = proto
         .enchantments
         .iter()
@@ -140,7 +188,26 @@ fn item_spec(key: &str, proto: &ProtoItemStack) -> String {
             })
             .collect::<Vec<_>>()
             .join(",");
-        spec.push_str(&format!("[enchantments={{{body}}}]"));
+        components.push(format!("enchantments={{{body}}}"));
+    }
+    if let Some(name) = &proto.custom_name {
+        components.push(format!("custom_name={}", snbt_string(name)));
+    }
+    if !proto.lore.is_empty() {
+        let lines: Vec<String> = proto.lore.iter().map(|l| snbt_string(l)).collect();
+        components.push(format!("lore=[{}]", lines.join(",")));
+    }
+    if proto.damage > 0 {
+        components.push(format!("damage={}", proto.damage));
+    }
+    if proto.unbreakable {
+        components.push("unbreakable={}".to_string());
+    }
+    if let Some(rgb) = proto.dyed_color {
+        components.push(format!("dyed_color={rgb}"));
+    }
+    if !components.is_empty() {
+        spec.push_str(&format!("[{}]", components.join(",")));
     }
     spec
 }

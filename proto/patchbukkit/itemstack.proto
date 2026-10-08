@@ -17,6 +17,13 @@ message ItemStack {
   uint32 amount = 2;
   // Enchantment key (e.g. "minecraft:unbreaking") -> level.
   map<string, int32> enchantments = 3;
+  // Display name and lore lines as legacy (section sign) formatted text.
+  optional string custom_name = 4;
+  repeated string lore = 5;
+  int32 damage = 6;
+  bool unbreakable = 7;
+  // Leather armor colour as 0xRRGGBB.
+  optional int32 dyed_color = 8;
 }
 
 message GetPlayerInventoryResponse {
