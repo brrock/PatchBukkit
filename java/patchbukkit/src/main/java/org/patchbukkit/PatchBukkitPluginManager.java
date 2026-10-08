@@ -30,6 +30,8 @@ public class PatchBukkitPluginManager implements PluginManager {
     private final Server server;
     private final PatchBukkitEventManager eventManager;
     private final Map<String, Plugin> plugins = new ConcurrentHashMap<>();
+    // Registration (load) order, used for getPlugins() and reversed for disablePlugins() as in Bukkit.
+    private final java.util.concurrent.CopyOnWriteArrayList<Plugin> loadOrder = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final SimplePluginManager simplePluginManager;
     PermissionManager permissionManager;
 
@@ -73,6 +75,7 @@ public class PatchBukkitPluginManager implements PluginManager {
             return;
         }
         plugins.put(plugin.getName().toLowerCase(java.util.Locale.ENGLISH), plugin);
+        loadOrder.addIfAbsent(plugin);
         if (plugin.getDescription() != null && plugin.getDescription().getProvides() != null) {
             for (String provided : plugin.getDescription().getProvides()) {
                 if (provided != null && !provided.isBlank()) {
@@ -92,7 +95,7 @@ public class PatchBukkitPluginManager implements PluginManager {
 
     @Override
     public @NotNull Plugin[] getPlugins() {
-        return plugins.values().stream().distinct().toArray(Plugin[]::new);
+        return loadOrder.toArray(Plugin[]::new);
     }
 
     @Override
@@ -180,8 +183,9 @@ public class PatchBukkitPluginManager implements PluginManager {
 
     @Override
     public void disablePlugins() {
-        for (Plugin plugin : getPlugins()) {
-            disablePlugin(plugin);
+        Plugin[] plugins = getPlugins();
+        for (int i = plugins.length - 1; i >= 0; i--) {
+            disablePlugin(plugins[i]);
         }
     }
 
@@ -189,6 +193,7 @@ public class PatchBukkitPluginManager implements PluginManager {
     public void clearPlugins() {
         disablePlugins();
         plugins.clear();
+        loadOrder.clear();
     }
 
     @Override
