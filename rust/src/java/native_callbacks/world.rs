@@ -466,6 +466,67 @@ pub fn ffi_native_bridge_spawn_world_entity_impl(
     let new_uuid = uuid::Uuid::new_v4();
     let pos = Vector3::new(request.x, request.y, request.z);
 
+    match request.entity_type.to_uppercase().as_str() {
+        "EXPERIENCE_ORB" => {
+            let amount = u32::try_from(request.experience.unwrap_or(0)).unwrap_or(0);
+            if amount > 0 {
+                let w = world.clone();
+                ctx.runtime.spawn(async move {
+                    pumpkin::entity::experience_orb::ExperienceOrbEntity::spawn(&w, pos, amount);
+                });
+            }
+            return Some(SpawnWorldEntityResponse {
+                entity_uuid: Some(ProtoUuid {
+                    value: new_uuid.to_string(),
+                }),
+                success: amount > 0,
+                entity_id: 0,
+            });
+        }
+        "ITEM" | "DROPPED_ITEM" if request.item.is_some() => {
+            // The item entity must be the server's own: an ItemEntity built from this plugin's
+            // copy of Pumpkin ticks with the plugin's component TypeIds and panics on a server
+            // stack (and the reverse for a plugin stack). Summon it through the server's command.
+            let item = request.item.as_ref()?;
+            let key = item.r#type.strip_prefix("minecraft:").unwrap_or(&item.r#type);
+            let safe = !key.is_empty()
+                && key.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+            if !safe || key == "air" || item.amount == 0 {
+                return Some(SpawnWorldEntityResponse {
+                    entity_uuid: None,
+                    success: false,
+                    entity_id: 0,
+                });
+            }
+            let command = format!(
+                "summon minecraft:item {} {} {} {{UUID:{},Item:{{id:\"minecraft:{key}\",count:{}}}}}",
+                request.x,
+                request.y,
+                request.z,
+                uuid_int_array(new_uuid),
+                item.amount.min(99)
+            );
+            let server = ctx.plugin_context.server.clone();
+            let target_world = world.clone();
+            ctx.runtime.spawn(async move {
+                let mut source = pumpkin::command::CommandSender::Console.into_source(&server);
+                source.silent = true;
+                source.world = Some(target_world);
+                if let Err(e) = server.command_dispatcher.load().execute_input(&command, &source) {
+                    tracing::warn!("PatchBukkit: dropping item failed ({command}): {e:?}");
+                }
+            });
+            return Some(SpawnWorldEntityResponse {
+                entity_uuid: Some(ProtoUuid {
+                    value: new_uuid.to_string(),
+                }),
+                success: true,
+                entity_id: 0,
+            });
+        }
+        _ => {}
+    }
+
     let entity_type: &'static pumpkin_data::entity::EntityType =
         match request.entity_type.to_uppercase().as_str() {
             "LIGHTNING_BOLT" | "LIGHTNING" => &pumpkin_data::entity::EntityType::LIGHTNING_BOLT,
@@ -537,13 +598,26 @@ pub fn ffi_native_bridge_play_world_sound_impl(request: PlayWorldSoundRequest) -
     let pos = Vector3::new(request.x, request.y, request.z);
     let sound_name = request.sound;
     if let Some(sound) = pumpkin_data::sound::Sound::from_name(&sound_name) {
-        world.play_sound_raw(
-            sound as u16,
-            pumpkin_data::sound::SoundCategory::Master,
-            &pos,
-            request.volume,
-            request.pitch,
-        );
+        // Send to each player in earshot. World::play_sound_raw groups recipients in a map keyed
+        // by protocol version, which corrupted memory when run from this plugin's copy of it.
+        let audible_blocks = f64::from(request.volume.max(1.0)) * 16.0;
+        let seed: i64 = rand::random();
+        for player in world.players.load().iter() {
+            let p = pumpkin::entity::EntityBase::get_entity(player.as_ref()).pos.load();
+            if (p.x - pos.x).abs() <= audible_blocks
+                && (p.y - pos.y).abs() <= audible_blocks
+                && (p.z - pos.z).abs() <= audible_blocks
+            {
+                player.play_sound(
+                    sound as u16,
+                    pumpkin_data::sound::SoundCategory::Master,
+                    &pos,
+                    request.volume,
+                    request.pitch,
+                    seed,
+                );
+            }
+        }
     }
 
     Some(())
@@ -751,7 +825,17 @@ pub fn ffi_native_bridge_get_block_drops_impl(
         .map(|stack| crate::proto::patchbukkit::itemstack::ItemStack {
             r#type: format!("minecraft:{}", stack.item.registry_key),
             amount: u32::from(stack.item_count),
+            ..Default::default()
         })
         .collect();
     Some(GetBlockDropsResponse { drops })
+}
+
+/// Formats a UUID as the SNBT int array vanilla uses for an entity's `UUID` tag.
+fn uuid_int_array(uuid: uuid::Uuid) -> String {
+    let v = uuid.as_u128();
+    let parts: Vec<String> = (0..4)
+        .map(|i| ((v >> (96 - 32 * i)) as u32 as i32).to_string())
+        .collect();
+    format!("[I;{}]", parts.join(","))
 }

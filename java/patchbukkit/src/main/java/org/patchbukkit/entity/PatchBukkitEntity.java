@@ -122,7 +122,14 @@ public class PatchBukkitEntity implements Entity {
     private EntityType entityType = EntityType.UNKNOWN;
 
     public static Entity create(UUID uuid, EntityType type, Location loc, int entityId) {
-        PatchBukkitEntity entity = new PatchBukkitEntity(uuid, type != null ? type.name() : "entity", entityId);
+        PatchBukkitEntity entity;
+        if (type == EntityType.ITEM) {
+            entity = new PatchBukkitItem(uuid, entityId);
+        } else if (type == EntityType.EXPERIENCE_ORB) {
+            entity = new PatchBukkitExperienceOrb(uuid);
+        } else {
+            entity = new PatchBukkitEntity(uuid, type != null ? type.name() : "entity", entityId);
+        }
         entity.entityType = type != null ? type : EntityType.UNKNOWN;
         entity.cachedLocation = loc != null ? loc.clone() : new Location(null, 0, 0, 0);
         return entity;

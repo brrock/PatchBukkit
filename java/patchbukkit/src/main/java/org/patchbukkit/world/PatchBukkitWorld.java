@@ -438,6 +438,7 @@ public class PatchBukkitWorld extends PatchBukkitRegionAccessor implements World
                 .setX(loc.getX())
                 .setY(loc.getY())
                 .setZ(loc.getZ())
+                .setItem(org.patchbukkit.inventory.PatchBukkitPlayerInventory.toProto(item))
                 .build());
             if (res != null) {
                 if (res.hasEntityUuid()) {
@@ -450,6 +451,7 @@ public class PatchBukkitWorld extends PatchBukkitRegionAccessor implements World
         } catch (Throwable ignored) {}
 
         Item itemEntity = (Item) PatchBukkitEntity.create(entityUuid, EntityType.ITEM, loc, entityId);
+        itemEntity.setItemStack(item);
         if (function != null) {
             function.accept(itemEntity);
         }

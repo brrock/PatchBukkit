@@ -179,7 +179,7 @@ fn server_built_stack(key: &str, proto: &ProtoItemStack) -> Option<PumpkinItemSt
     Some(stack)
 }
 
-fn proto_item_to_pumpkin(proto: Option<&ProtoItemStack>) -> PumpkinItemStack {
+pub(crate) fn proto_item_to_pumpkin(proto: Option<&ProtoItemStack>) -> PumpkinItemStack {
     let Some(proto) = proto else {
         return PumpkinItemStack::EMPTY.clone();
     };

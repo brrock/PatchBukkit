@@ -223,7 +223,27 @@ public class PatchBukkitBlock implements Block {
 
     @Override
     public @NotNull SoundGroup getBlockSoundGroup() {
-        return getBlockData().getSoundGroup();
+        // Built from the vanilla SoundType of the block state; the proxied BlockData has none.
+        net.minecraft.world.level.block.SoundType type;
+        try {
+            type = getNMS().getSoundType();
+        } catch (Throwable t) {
+            type = net.minecraft.world.level.block.SoundType.STONE;
+        }
+        final net.minecraft.world.level.block.SoundType sound = type;
+        return new SoundGroup() {
+            @Override public float getVolume() { return sound.getVolume(); }
+            @Override public float getPitch() { return sound.getPitch(); }
+            @Override public @NotNull org.bukkit.Sound getBreakSound() { return toBukkit(sound.getBreakSound()); }
+            @Override public @NotNull org.bukkit.Sound getStepSound() { return toBukkit(sound.getStepSound()); }
+            @Override public @NotNull org.bukkit.Sound getPlaceSound() { return toBukkit(sound.getPlaceSound()); }
+            @Override public @NotNull org.bukkit.Sound getHitSound() { return toBukkit(sound.getHitSound()); }
+            @Override public @NotNull org.bukkit.Sound getFallSound() { return toBukkit(sound.getFallSound()); }
+        };
+    }
+
+    private static org.bukkit.Sound toBukkit(net.minecraft.sounds.SoundEvent event) {
+        return org.bukkit.Registry.SOUNDS.get(org.bukkit.NamespacedKey.fromString(event.location().toString()));
     }
 
     @Override
@@ -322,8 +342,31 @@ public class PatchBukkitBlock implements Block {
     }
 
     public boolean breakNaturally(@Nullable ItemStack tool, boolean triggerEffect, boolean dropExperience, boolean dropAsItem) {
+        // Roll the loot and experience while the block still exists, then clear it and drop them.
+        org.bukkit.Location center = getLocation().toCenterLocation();
+        java.util.Collection<ItemStack> drops = dropAsItem ? getDrops(tool, null) : java.util.List.of();
+        int experience = dropExperience ? experienceFor(tool) : 0;
         setType(Material.AIR);
+        for (ItemStack drop : drops) {
+            getWorld().dropItemNaturally(center, drop);
+        }
+        if (experience > 0) {
+            getWorld().spawn(center, org.bukkit.entity.ExperienceOrb.class).setExperience(experience);
+        }
         return true;
+    }
+
+    /** Vanilla experience for breaking this block with the tool, as Block#getExpDrop computes it. */
+    private int experienceFor(@Nullable ItemStack tool) {
+        try {
+            net.minecraft.world.level.block.state.BlockState state = getNMS();
+            net.minecraft.world.item.ItemStack nmsTool = net.minecraft.world.item.ItemStack.EMPTY;
+            return state.getBlock().getExpDrop(state, getCraftWorld().getHandle(), getPosition(), nmsTool, true);
+        } catch (Throwable t) {
+            java.util.logging.Logger.getLogger("PatchBukkitBlock")
+                .log(java.util.logging.Level.WARNING, "Failed to compute block experience", t);
+            return 0;
+        }
     }
 
     @Override

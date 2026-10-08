@@ -242,6 +242,26 @@ public class PatchBukkitRegionAccessor implements RegionAccessor {
         if (function != null) {
             function.accept(entity);
         }
+        if (entity instanceof org.patchbukkit.entity.PatchBukkitExperienceOrb orb) {
+            // The amount is usually set right after spawn() returns, so send the orb afterwards.
+            UUID worldUuid = (this instanceof PatchBukkitWorld w) ? w.getUID() : UUID.randomUUID();
+            Location at = location.clone();
+            org.patchbukkit.scheduler.PatchBukkitScheduler.runOnNextDrain(() -> {
+                if (orb.getExperience() <= 0) {
+                    return;
+                }
+                try {
+                    NativeBridgeFfi.spawnWorldEntity(SpawnWorldEntityRequest.newBuilder()
+                        .setWorldUuid(BridgeUtils.convertUuid(worldUuid))
+                        .setEntityType("EXPERIENCE_ORB")
+                        .setX(at.getX())
+                        .setY(at.getY())
+                        .setZ(at.getZ())
+                        .setExperience(orb.getExperience())
+                        .build());
+                } catch (Throwable ignored) {}
+            });
+        }
         return addEntity(entity);
     }
 
