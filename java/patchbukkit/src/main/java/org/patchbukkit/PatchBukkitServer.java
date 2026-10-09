@@ -1281,6 +1281,7 @@ public class PatchBukkitServer implements Server {
 
     @Override
     public @NotNull List<World> getWorlds() {
+        if (worldsHidden) return List.of();
         var response = NativeBridgeFfi.getWorlds(EmptyRequest.getDefaultInstance());
         if (response == null) return List.of();
         List<World> list = new ArrayList<>();
@@ -2216,6 +2217,16 @@ public class PatchBukkitServer implements Server {
         }
 
         return PatchBukkitBlockData.newData(material, type, data);
+    }
+
+    private static volatile boolean worldsHidden;
+
+    /**
+     * While set, {@link #getWorlds()} reports no worlds. Used while enabling {@code load: STARTUP}
+     * plugins, which Bukkit enables before any world is loaded.
+     */
+    public static void setWorldsHidden(boolean hidden) {
+        worldsHidden = hidden;
     }
 
     /** Tags handed out so far, per Bukkit tag registry ("blocks", "items", ...), in creation order. */

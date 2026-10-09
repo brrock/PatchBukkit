@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.net.URL;
 import java.util.*;
+import org.patchbukkit.PatchBukkitServer;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.logging.Level;
@@ -81,17 +82,40 @@ public class PatchBukkitBootstrap {
                 }
             }
 
-            // Enable all instantiated plugins in dependency order
+            // Enable all instantiated plugins in dependency order, following Bukkit's startup:
+            // load: STARTUP plugins see no worlds yet, then each world is announced with
+            // WorldInitEvent/WorldLoadEvent, then the POSTWORLD plugins are enabled.
+            // Pumpkin's worlds already exist by now, so they are hidden for the first phase.
             if (Bukkit.getPluginManager() instanceof PatchBukkitPluginManager pm) {
+                List<PluginHolder> startup = new ArrayList<>();
+                List<PluginHolder> postWorld = new ArrayList<>();
                 for (PluginHolder holder : loadOrder) {
-                    if (holder.pluginInstance != null) {
+                    if (holder.pluginInstance == null) continue;
+                    boolean isStartup = holder.description != null
+                        && holder.description.getLoad() == org.bukkit.plugin.PluginLoadOrder.STARTUP;
+                    (isStartup ? startup : postWorld).add(holder);
+                }
+
+                if (!startup.isEmpty()) {
+                    PatchBukkitServer.setWorldsHidden(true);
+                    try {
+                        for (PluginHolder holder : startup) {
+                            enable(pm, holder);
+                        }
+                    } finally {
+                        PatchBukkitServer.setWorldsHidden(false);
+                    }
+                    for (org.bukkit.World world : Bukkit.getWorlds()) {
                         try {
-                            pm.enablePlugin(holder.pluginInstance);
-                            LOGGER.info("[PatchBukkit] Enabled plugin: " + holder.name);
+                            pm.callEvent(new org.bukkit.event.world.WorldInitEvent(world));
+                            pm.callEvent(new org.bukkit.event.world.WorldLoadEvent(world));
                         } catch (Throwable t) {
-                            LOGGER.log(Level.SEVERE, "[PatchBukkit] Error enabling plugin " + holder.name, t);
+                            LOGGER.log(Level.SEVERE, "[PatchBukkit] Error announcing world " + world.getName(), t);
                         }
                     }
+                }
+                for (PluginHolder holder : postWorld) {
+                    enable(pm, holder);
                 }
             }
 
@@ -99,6 +123,15 @@ public class PatchBukkitBootstrap {
         } catch (Throwable t) {
             LOGGER.log(Level.SEVERE, "[PatchBukkit] Fatal error during bootstrap", t);
             return false;
+        }
+    }
+
+    private static void enable(PatchBukkitPluginManager pm, PluginHolder holder) {
+        try {
+            pm.enablePlugin(holder.pluginInstance);
+            LOGGER.info("[PatchBukkit] Enabled plugin: " + holder.name);
+        } catch (Throwable t) {
+            LOGGER.log(Level.SEVERE, "[PatchBukkit] Error enabling plugin " + holder.name, t);
         }
     }
 
