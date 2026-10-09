@@ -40,7 +40,8 @@ fn window_type(rows: usize) -> WindowType {
 
 struct CustomChestScreenHandler {
     behaviour: ScreenHandlerBehaviour,
-    id: u64,
+    /// The custom inventory's id, released when its last screen closes.
+    id: Option<u64>,
     slots: i32,
 }
 
@@ -58,12 +59,23 @@ impl ScreenHandler for CustomChestScreenHandler {
         &mut self.behaviour
     }
     fn on_closed(&mut self, player: &dyn InventoryPlayer) {
-        self.default_on_closed(player);
+        // The cursor holds a plugin-built stack; the default close logic would hand it
+        // to server code.
+        let cursor = std::mem::replace(
+            &mut *self
+                .behaviour
+                .cursor_stack
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner),
+            ItemStack::EMPTY.clone(),
+        );
+        crate::java::native_callbacks::item_domain::return_cursor(player, cursor);
+        let Some(id) = self.id else { return };
         with_open(|open| {
-            if let Some(entry) = open.get_mut(&self.id) {
+            if let Some(entry) = open.get_mut(&id) {
                 entry.1 = entry.1.saturating_sub(1);
                 if entry.1 == 0 {
-                    open.remove(&self.id);
+                    open.remove(&id);
                 }
             }
         });
@@ -92,35 +104,47 @@ impl ScreenHandler for CustomChestScreenHandler {
     }
 }
 
-struct CustomChestFactory {
-    id: u64,
-    rows: usize,
-    inventory: Arc<SimpleInventory>,
-    title: pumpkin_util::text::TextComponent,
+/// A chest screen over any inventory, built and run by the plugin on plugin-built
+/// stacks (see [`crate::java::native_callbacks::item_domain`]).
+pub struct PluginChestFactory {
+    pub inventory: Arc<dyn Inventory>,
+    pub rows: usize,
+    pub title: pumpkin_util::text::TextComponent,
+    pub id: Option<u64>,
 }
 
-impl ScreenHandlerFactory for CustomChestFactory {
+impl ScreenHandlerFactory for PluginChestFactory {
     fn create_screen_handler(
         &self,
         sync_id: u8,
         player_inventory: &Arc<pumpkin_inventory::player::player_inventory::PlayerInventory>,
         _player: &dyn InventoryPlayer,
     ) -> Option<SharedScreenHandler> {
-        let slots = self.rows * 9;
+        use crate::java::native_callbacks::item_domain::PluginView;
+        let slots = (self.rows * 9).min(self.inventory.size());
         let mut handler = CustomChestScreenHandler {
             behaviour: ScreenHandlerBehaviour::new(sync_id, Some(window_type(self.rows))),
             id: self.id,
-            slots: slots as i32,
+            slots: (self.rows * 9) as i32,
         };
-        let inventory: Arc<dyn Inventory> = self.inventory.clone();
-        for i in 0..slots {
-            handler.add_slot(Arc::new(NormalSlot::new(inventory.clone(), i)));
+        let inventory: Arc<dyn Inventory> = Arc::new(PluginView(self.inventory.clone()));
+        let filler: Arc<dyn Inventory> = Arc::new(SimpleInventory::new(1));
+        for i in 0..self.rows * 9 {
+            if i < slots {
+                handler.add_slot(Arc::new(NormalSlot::new(inventory.clone(), i)));
+            } else {
+                handler.add_slot(Arc::new(crate::java::native_callbacks::entity::LockedSlot::new(filler.clone())));
+            }
         }
-        let player: Arc<dyn Inventory> = player_inventory.clone();
+        let player: Arc<dyn Inventory> = Arc::new(PluginView(player_inventory.clone()));
         handler.add_player_slots(&player);
-        with_open(|open| {
-            open.entry(self.id).or_insert_with(|| (self.inventory.clone(), 0)).1 += 1;
-        });
+        if let Some(id) = self.id {
+            with_open(|open| {
+                if let Some(entry) = open.get_mut(&id) {
+                    entry.1 += 1;
+                }
+            });
+        }
         Some(Arc::new(Mutex::new(handler)))
     }
 
@@ -143,14 +167,18 @@ pub fn ffi_native_bridge_open_custom_inventory_impl(
     request: CustomInventoryRequest,
 ) -> Option<CustomInventoryResponse> {
     let rows = (request.rows as usize).clamp(1, 6);
-    let inventory = with_open(|open| open.get(&request.id).map(|e| e.0.clone()))
-        .unwrap_or_else(|| Arc::new(SimpleInventory::new(rows * 9)));
+    let inventory = with_open(|open| {
+        open.entry(request.id)
+            .or_insert_with(|| (Arc::new(SimpleInventory::new(rows * 9)), 0))
+            .0
+            .clone()
+    });
     store(&inventory, &request.items);
-    let factory = CustomChestFactory {
-        id: request.id,
-        rows,
+    let factory = PluginChestFactory {
         inventory,
+        rows,
         title: pumpkin_util::text::TextComponent::from_legacy_string(&request.title),
+        id: Some(request.id),
     };
     let opened = with_player(request.viewer.as_ref(), |viewer| {
         viewer.open_handled_screen(&factory, None).is_some()

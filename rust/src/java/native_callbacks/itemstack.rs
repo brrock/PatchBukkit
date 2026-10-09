@@ -231,9 +231,14 @@ fn server_built_stack(key: &str, proto: &ProtoItemStack) -> Option<PumpkinItemSt
     if !is_safe_ident(key) {
         return None;
     }
+    let count = proto.amount.min(u32::from(u8::MAX)) as u8;
+    parse_server_stack(&item_spec(key, proto), key, count)
+}
+
+/// Parses `item[components]` with the server's parser, giving a stack the server owns.
+pub(crate) fn parse_server_stack(spec: &str, key: &str, count: u8) -> Option<PumpkinItemStack> {
     let parser = server_item_parser()?;
-    let spec = item_spec(key, proto);
-    let parsed = parser.parse(&mut StringReader::new(spec)).ok()?;
+    let parsed = parser.parse(&mut StringReader::new(spec.to_string())).ok()?;
     let raw = Box::into_raw(parsed).cast::<PumpkinItemStack>();
     let mut stack = unsafe { *Box::from_raw(raw) };
     let got = stack.item.registry_key;
@@ -242,7 +247,7 @@ fn server_built_stack(key: &str, proto: &ProtoItemStack) -> Option<PumpkinItemSt
         std::mem::forget(stack);
         return None;
     }
-    stack.item_count = proto.amount.min(u32::from(u8::MAX)) as u8;
+    stack.item_count = count;
     Some(stack)
 }
 

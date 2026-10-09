@@ -44,6 +44,7 @@ pub use entity_state::*;
 pub mod world;
 pub mod sign;
 pub mod custom_inventory;
+pub mod item_domain;
 pub use custom_inventory::*;
 pub use sign::*;
 pub use world::*;
