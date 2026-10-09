@@ -911,6 +911,8 @@ pub fn ffi_native_bridge_update_inventory_impl(request: Uuid) -> Option<()> {
 struct WorkstationScreenFactory {
     kind: String,
     recipes: std::sync::Arc<pumpkin::server::RecipeManager>,
+    /// The viewer's enchantment seed, for an enchanting table.
+    seed: i32,
 }
 
 impl ScreenHandlerFactory for WorkstationScreenFactory {
@@ -956,6 +958,15 @@ impl ScreenHandlerFactory for WorkstationScreenFactory {
             "SMITHING" => Arc::new(Mutex::new(
                 pi::smithing_table_screen_handler::SmithingTableScreenHandler::new(sync_id, inv),
             )),
+            // No real table, so no bookshelves to count: offer full-power enchantments.
+            "ENCHANTING" => {
+                let inventory: Arc<dyn pi::Inventory> = Arc::new(pi::SimpleInventory::new(2));
+                Arc::new(Mutex::new(
+                    pi::enchanting::enchanting_screen_handler::EnchantingTableScreenHandler::new(
+                        sync_id, inv, &inventory, self.seed, 15,
+                    ),
+                ))
+            }
             _ => return None,
         };
         Some(handler)
@@ -969,6 +980,7 @@ impl ScreenHandlerFactory for WorkstationScreenFactory {
             "STONECUTTER" => "container.stonecutter",
             "LOOM" => "container.loom",
             "CARTOGRAPHY" => "container.cartography_table",
+            "ENCHANTING" => "container.enchant",
             _ => "container.upgrade",
         };
         pumpkin_util::text::TextComponent::translate(key, [])
@@ -978,16 +990,20 @@ impl ScreenHandlerFactory for WorkstationScreenFactory {
 pub fn ffi_native_bridge_open_workstation_impl(
     request: crate::proto::patchbukkit::entity::OpenWorkstationRequest,
 ) -> Option<crate::proto::patchbukkit::entity::OpenWorkstationResponse> {
-    const KINDS: [&str; 8] = [
+    const KINDS: [&str; 9] = [
         "WORKBENCH", "CRAFTING", "ANVIL", "GRINDSTONE", "STONECUTTER", "LOOM", "CARTOGRAPHY",
-        "SMITHING",
+        "SMITHING", "ENCHANTING",
     ];
     if !KINDS.contains(&request.kind.as_str()) {
         return Some(crate::proto::patchbukkit::entity::OpenWorkstationResponse { opened: false });
     }
     let recipes = CALLBACK_CONTEXT.get()?.plugin_context.server.recipe_manager.clone();
     with_player(request.viewer.as_ref(), |viewer| {
-        let factory = WorkstationScreenFactory { kind: request.kind.clone(), recipes };
+        let factory = WorkstationScreenFactory {
+            kind: request.kind.clone(),
+            recipes,
+            seed: viewer.enchantment_seed(),
+        };
         let opened = viewer.open_handled_screen(&factory, None).is_some();
         crate::proto::patchbukkit::entity::OpenWorkstationResponse { opened }
     })

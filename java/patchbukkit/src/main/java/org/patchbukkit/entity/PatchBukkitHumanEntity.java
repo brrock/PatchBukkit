@@ -554,7 +554,8 @@ public class PatchBukkitHumanEntity
         if (this.openInventoryView != null) {
             closeInventory(Reason.OPEN_NEW);
         }
-        this.openInventoryView = new org.patchbukkit.inventory.PatchBukkitInventoryView(this, inventory);
+        InventoryView view = new org.patchbukkit.inventory.PatchBukkitInventoryView(this, inventory);
+        this.openInventoryView = view;
         try {
             if (inventory instanceof org.bukkit.inventory.PlayerInventory pinv
                     && pinv.getHolder() instanceof org.bukkit.entity.HumanEntity target) {
@@ -579,9 +580,16 @@ public class PatchBukkitHumanEntity
             } else {
                 BridgeUtils.logBridgeFailure("openInventory",
                     new UnsupportedOperationException("opening " + inventory.getType() + " inventories"));
+                view = null;
             }
-        } catch (Throwable t) { BridgeUtils.logBridgeFailure("openInventory", t); }
-        return this.openInventoryView;
+        } catch (Throwable t) {
+            BridgeUtils.logBridgeFailure("openInventory", t);
+            view = null;
+        }
+        // Opening the new window closes the old one, and that close event clears the
+        // tracked view, so restore it once Pumpkin has opened the window.
+        this.openInventoryView = view;
+        return view;
     }
 
     /** Forgets the tracked view once Pumpkin has closed the window. */
