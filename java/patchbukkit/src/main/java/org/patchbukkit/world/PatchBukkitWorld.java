@@ -244,6 +244,11 @@ public class PatchBukkitWorld extends PatchBukkitRegionAccessor implements World
         }
     }
 
+    /** The entity object a plugin spawned in this world, without asking the server. */
+    public @Nullable Entity getRegisteredEntity(UUID uid) {
+        return this.registeredEntities.get(uid);
+    }
+
     public void unregisterEntity(UUID uid) {
         this.registeredEntities.remove(uid);
     }

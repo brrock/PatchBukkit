@@ -961,8 +961,33 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public @NotNull SpawnCategory getSpawnCategory() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getSpawnCategory'");
+        return spawnCategoryOf(this.getType());
+    }
+
+    /** The vanilla MobCategory of the type, as Bukkit's SpawnCategory (CraftSpawnCategory). */
+    public static @NotNull SpawnCategory spawnCategoryOf(EntityType type) {
+        if (type == null || type.getKey() == null) {
+            return SpawnCategory.MISC;
+        }
+        try {
+            var nmsType = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
+                .getOptional(net.minecraft.resources.Identifier.parse(type.getKey().toString()));
+            if (nmsType.isEmpty()) {
+                return SpawnCategory.MISC;
+            }
+            return switch (nmsType.get().getCategory()) {
+                case MONSTER -> SpawnCategory.MONSTER;
+                case CREATURE -> SpawnCategory.ANIMAL;
+                case AMBIENT -> SpawnCategory.AMBIENT;
+                case AXOLOTLS -> SpawnCategory.AXOLOTL;
+                case UNDERGROUND_WATER_CREATURE -> SpawnCategory.WATER_UNDERGROUND_CREATURE;
+                case WATER_CREATURE -> SpawnCategory.WATER_ANIMAL;
+                case WATER_AMBIENT -> SpawnCategory.WATER_AMBIENT;
+                default -> SpawnCategory.MISC;
+            };
+        } catch (Throwable t) {
+            return SpawnCategory.MISC;
+        }
     }
 
     @Override

@@ -1012,7 +1012,7 @@ public class PatchBukkitEventFactory {
             }
             case ENTITY_PICKUP_ITEM -> {
                 var ev = event.getEntityPickupItem();
-                yield createGenericBukkitEvent("org.bukkit.event.entity.EntityPickupItemEvent", ev);
+                yield createPickupEvent(ev);
             }
             case ENTITY_PLACE -> {
                 var ev = event.getEntityPlace();
@@ -1326,6 +1326,48 @@ public class PatchBukkitEventFactory {
             return new org.bukkit.event.entity.CreatureSpawnEvent(living, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.DEFAULT);
         }
         return new org.bukkit.event.entity.EntitySpawnEvent(entity);
+    }
+
+    /**
+     * Builds EntityPickupItemEvent from the picker's uuid and type the server sends. Players
+     * resolve to the online Player; mobs to the object a plugin spawned when there is one, so
+     * state kept on it (persistent data, flags) is the same.
+     */
+    @Nullable
+    private static org.bukkit.event.Event createPickupEvent(patchbukkit.events.EntityPickupItemEvent ev) {
+        if (!ev.hasEntityUuid()) {
+            return null;
+        }
+        java.util.UUID uuid = java.util.UUID.fromString(ev.getEntityUuid().getValue());
+        Entity picker = Bukkit.getPlayer(uuid);
+        World world = Bukkit.getWorlds().isEmpty() ? null : Bukkit.getWorlds().get(0);
+        if (picker == null) {
+            for (World w : Bukkit.getWorlds()) {
+                if (w instanceof org.patchbukkit.world.PatchBukkitWorld pbWorld) {
+                    Entity registered = pbWorld.getRegisteredEntity(uuid);
+                    if (registered != null) {
+                        picker = registered;
+                        world = w;
+                        break;
+                    }
+                }
+            }
+        }
+        if (picker == null) {
+            org.bukkit.entity.EntityType type = org.bukkit.entity.EntityType.fromName(ev.getEntityType());
+            picker = org.patchbukkit.entity.PatchBukkitEntity.create(uuid, type, new Location(world, 0, 0, 0), ev.getEntityId());
+            if (world instanceof org.patchbukkit.world.PatchBukkitWorld pbWorld) {
+                // Keep this object so later events about the entity see the same state.
+                pbWorld.registerEntity(picker);
+            }
+        }
+        if (!(picker instanceof org.bukkit.entity.LivingEntity living)) {
+            return null;
+        }
+        Location at = picker.getLocation();
+        org.bukkit.entity.Item item = (org.bukkit.entity.Item) org.patchbukkit.entity.PatchBukkitEntity.create(
+            java.util.UUID.randomUUID(), org.bukkit.entity.EntityType.ITEM, at, -1);
+        return new org.bukkit.event.entity.EntityPickupItemEvent(living, item, 0);
     }
 
     @Nullable

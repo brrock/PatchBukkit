@@ -5355,10 +5355,32 @@ impl PatchBukkitEvent for pumpkin::plugin::entity::entity_pickup_item::EntityPic
     fn to_payload(&self, server: Arc<Server>) -> JvmEventPayload {
         JvmEventPayload {
             event: Event {
-                data: Some(Data::EntityPickupItem(EntityPickupItemEvent {
-                    entity_id: self.entity_id,
-                    item_name: self.item_name.clone(),
-                    count: u32::from(self.count),
+                data: Some(Data::EntityPickupItem({
+                    // Plain data only: the picker's uuid and type name.
+                    let mut picker_uuid = None;
+                    let mut picker_type = String::new();
+                    for world in server.worlds.load().iter() {
+                        if let Some(player) = world.get_player_by_id(self.entity_id) {
+                            picker_uuid = Some(player.gameprofile.id);
+                            picker_type = "player".to_string();
+                            break;
+                        }
+                        if let Some(entity) = world.get_entity_by_id(self.entity_id) {
+                            let base = entity.get_entity();
+                            picker_uuid = Some(base.entity_uuid);
+                            picker_type = base.entity_type.resource_name.to_string();
+                            break;
+                        }
+                    }
+                    EntityPickupItemEvent {
+                        entity_id: self.entity_id,
+                        item_name: self.item_name.clone(),
+                        count: u32::from(self.count),
+                        entity_uuid: picker_uuid.map(|u| Uuid {
+                            value: u.to_string(),
+                        }),
+                        entity_type: picker_type,
+                    }
                 })),
             },
             context: EventContext {
