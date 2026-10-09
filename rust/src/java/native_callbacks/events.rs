@@ -22,8 +22,16 @@ pub fn ffi_native_bridge_call_event_impl(request: CallEventRequest) -> Option<Ca
 }
 
 pub fn ffi_native_bridge_register_event_impl(request: RegisterEventRequest) -> Option<()> {
+    // Pumpkin never fires its CreatureSpawnEvent; living spawns arrive as EntitySpawnEvent and the
+    // Java side turns them into Bukkit CreatureSpawnEvents, so both listen to the same event.
+    let event_type = match request.event_type.as_str() {
+        "org.bukkit.event.entity.CreatureSpawnEvent" => {
+            "org.bukkit.event.entity.EntitySpawnEvent".to_string()
+        }
+        other => other.to_string(),
+    };
     let mut registered = REGISTERED_EVENTS.lock().unwrap();
-    if !registered.insert((request.plugin_name.clone(), request.event_type.clone())) {
+    if !registered.insert((request.plugin_name.clone(), event_type.clone())) {
         return Some(());
     }
 
@@ -40,7 +48,7 @@ pub fn ffi_native_bridge_register_event_impl(request: RegisterEventRequest) -> O
         _ => EventPriority::Normal,
     };
 
-    match request.event_type.as_str() {
+    match event_type.as_str() {
         "org.bukkit.event.world.AsyncStructureGenerateEvent" => {
             plugin_context
                 .register_event::<

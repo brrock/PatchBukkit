@@ -221,11 +221,21 @@ public class PatchBukkitRegionAccessor implements RegionAccessor {
         @NotNull Location location,
         @NotNull Class<T> clazz
     ) {
-        EntityType type = EntityType.PIG;
+        // Prefer the type whose class is exactly the one asked for (Zombie, not Drowned).
+        EntityType type = null;
         for (EntityType et : EntityType.values()) {
-            if (et.getEntityClass() != null && clazz.isAssignableFrom(et.getEntityClass())) {
+            if (et.getEntityClass() == clazz) {
                 type = et;
                 break;
+            }
+        }
+        if (type == null) {
+            type = EntityType.PIG;
+            for (EntityType et : EntityType.values()) {
+                if (et.getEntityClass() != null && clazz.isAssignableFrom(et.getEntityClass())) {
+                    type = et;
+                    break;
+                }
             }
         }
         return (T) PatchBukkitEntity.create(UUID.randomUUID(), type, location);

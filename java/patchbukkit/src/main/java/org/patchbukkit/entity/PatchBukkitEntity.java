@@ -601,7 +601,15 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public void remove() {
+        World world = this.getWorld();
         NativeBridgeFfi.removeEntity(BridgeUtils.convertUuid(this.uuid));
+        if (world instanceof org.patchbukkit.world.PatchBukkitWorld pbWorld) {
+            pbWorld.unregisterEntity(this.uuid);
+        }
+        if (world != null && org.bukkit.Bukkit.getServer() != null) {
+            org.bukkit.Bukkit.getPluginManager().callEvent(
+                new com.destroystokyo.paper.event.entity.EntityRemoveFromWorldEvent(this, world));
+        }
     }
 
     @Override

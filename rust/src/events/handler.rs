@@ -5603,11 +5603,19 @@ impl PatchBukkitEvent for pumpkin::plugin::entity::entity_spawn::EntitySpawnEven
             event: Event {
                 data: Some(Data::EntitySpawn(EntitySpawnEvent {
                     entity_id: self.entity_id,
-                    entity_type: self.entity_type.clone(),
+                    // Pumpkin sends the numeric registry id; Bukkit wants the name.
+                    entity_type: self
+                        .entity_type
+                        .parse::<u16>()
+                        .ok()
+                        .and_then(pumpkin_data::entity::EntityType::from_raw)
+                        .map_or_else(|| self.entity_type.clone(), |t| t.resource_name.to_string()),
                     pos_x: self.position.x,
                     pos_y: self.position.y,
                     pos_z: self.position.z,
-                    world_uuid: None,
+                    world_uuid: Some(crate::proto::patchbukkit::common::Uuid {
+                        value: self.world.uuid.to_string(),
+                    }),
                 })),
             },
             context: EventContext {

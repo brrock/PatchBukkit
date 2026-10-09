@@ -1056,7 +1056,7 @@ public class PatchBukkitEventFactory {
             }
             case ENTITY_SPAWN -> {
                 var ev = event.getEntitySpawn();
-                yield createGenericBukkitEvent("org.bukkit.event.entity.EntitySpawnEvent", ev);
+                yield createSpawnEvent(ev);
             }
             case ENTITY_SPELL_CAST -> {
                 var ev = event.getEntitySpellCast();
@@ -1293,6 +1293,39 @@ public class PatchBukkitEventFactory {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /**
+     * Builds the spawn event from the plain data the server sends: an entity of the right Bukkit
+     * type (no server objects are touched), and a CreatureSpawnEvent for living entities as
+     * Bukkit does.
+     */
+    @Nullable
+    private static org.bukkit.event.Event createSpawnEvent(patchbukkit.events.EntitySpawnEvent ev) {
+        String typeName = ev.getEntityType();
+        int colon = typeName.indexOf(':');
+        if (colon >= 0) {
+            typeName = typeName.substring(colon + 1);
+        }
+        org.bukkit.entity.EntityType type = org.bukkit.entity.EntityType.fromName(typeName.toLowerCase(java.util.Locale.ROOT));
+        if (type == null) {
+            try {
+                type = org.bukkit.entity.EntityType.valueOf(typeName.toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                type = org.bukkit.entity.EntityType.UNKNOWN;
+            }
+        }
+        World world = ev.hasWorldUuid() ? getWorld(ev.getWorldUuid().getValue()) : null;
+        if (world == null && !Bukkit.getWorlds().isEmpty()) {
+            world = Bukkit.getWorlds().get(0);
+        }
+        Location loc = new Location(world, ev.getPosX(), ev.getPosY(), ev.getPosZ());
+        Entity entity = org.patchbukkit.entity.PatchBukkitEntity.create(
+            new java.util.UUID(0, ev.getEntityId()), type, loc, ev.getEntityId());
+        if (entity instanceof org.bukkit.entity.LivingEntity living) {
+            return new org.bukkit.event.entity.CreatureSpawnEvent(living, org.bukkit.event.entity.CreatureSpawnEvent.SpawnReason.DEFAULT);
+        }
+        return new org.bukkit.event.entity.EntitySpawnEvent(entity);
     }
 
     @Nullable
