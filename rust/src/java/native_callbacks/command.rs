@@ -33,7 +33,13 @@ pub fn ffi_native_bridge_register_command_impl(request: RegisterCommandRequest) 
         for name in raw_names {
             let clean = name.trim_start_matches('/').to_string();
             if !clean.is_empty() {
-                if !names.contains(&clean) {
+                // For a name that already starts with '/' (WorldEdit's "/rotate", typed
+                // "//rotate") the bare name is only a convenience, so skip it when another
+                // command (vanilla "rotate", "fill") has it: registering over it merges both
+                // into one node that runs neither.
+                let bare_taken = name.starts_with('/')
+                    && plugin_context.server.command_dispatcher.load().has_command(&clean);
+                if !bare_taken && !names.contains(&clean) {
                     names.push(clean.clone());
                 }
                 let single = format!("/{}", clean);
@@ -47,7 +53,10 @@ pub fn ffi_native_bridge_register_command_impl(request: RegisterCommandRequest) 
             }
         }
 
-        let primary_name = cmd_name.trim_start_matches('/').to_string();
+        let Some(primary_name) = names.first().cloned() else {
+            tracing::warn!("Not registering command '{cmd_name}': it has no usable name");
+            return;
+        };
         let alias_names: Vec<String> = names
             .iter()
             .filter(|n| *n != &primary_name)
