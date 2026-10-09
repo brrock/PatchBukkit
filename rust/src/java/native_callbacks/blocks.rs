@@ -116,10 +116,15 @@ pub fn ffi_native_bridge_get_block_state_registry_impl(
         }
         states.push(state_to_string(state_id));
     }
+    let biomes = (0..=u8::MAX)
+        .filter_map(Biome::from_id)
+        .map(|biome| format!("minecraft:{}", biome.registry_id))
+        .collect();
     Some(GetBlockStateRegistryResponse {
         states,
         default_state_ids,
         default_block_flags,
+        biomes,
     })
 }
 

@@ -38,6 +38,7 @@ public final class BlockStateRegistry {
     private final String[] states;
     private final Map<String, Integer> idByState;
     private final Map<String, BlockInfo> blocks;
+    private final List<String> biomes;
 
     private BlockStateRegistry(GetBlockStateRegistryResponse response) {
         int count = response.getStatesCount();
@@ -65,6 +66,7 @@ public final class BlockStateRegistry {
             }
         }
 
+        this.biomes = List.copyOf(response.getBiomesList());
         this.blocks = new HashMap<>();
         List<Integer> defaultIds = response.getDefaultStateIdsList();
         for (int i = 0; i < defaultIds.size(); i++) {
@@ -94,6 +96,11 @@ public final class BlockStateRegistry {
             }
         }
         return registry;
+    }
+
+    /** Every biome key the server knows, such as "minecraft:plains", in biome id order. */
+    public List<String> biomes() {
+        return this.biomes;
     }
 
     public int size() {

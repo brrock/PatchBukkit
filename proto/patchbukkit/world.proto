@@ -265,6 +265,8 @@ message GetBlockStateRegistryResponse {
   repeated uint32 default_state_ids = 2;
   // Per block (same order as default_state_ids): bit flags of its default state, see BlockStateRegistry.
   repeated uint32 default_block_flags = 3;
+  // Every biome the server knows, as "minecraft:name", in biome id order.
+  repeated string biomes = 4;
 }
 
 message GetBiomesRequest {

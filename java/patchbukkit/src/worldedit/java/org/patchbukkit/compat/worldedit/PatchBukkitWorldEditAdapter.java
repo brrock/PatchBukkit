@@ -236,8 +236,8 @@ public final class PatchBukkitWorldEditAdapter implements BukkitImplAdapter {
 
     @Override
     public void initializeRegistries() {
-        for (org.bukkit.block.Biome biome : Registry.BIOME) {
-            String key = biome.getKey().toString();
+        // Registry.BIOME has no entries on PatchBukkit, so take the biome list from the server.
+        for (String key : this.registry.biomes()) {
             if (BiomeType.REGISTRY.get(key) == null) {
                 BiomeType.REGISTRY.register(key, new BiomeType(key));
             }
