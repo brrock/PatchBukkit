@@ -85,6 +85,9 @@ service NativeBridge {
   rpc GetCooldown(patchbukkit.entity.GetCooldownRequest) returns (patchbukkit.entity.GetCooldownResponse);
 
   rpc OpenEnderChest(patchbukkit.common.UUID) returns (google.protobuf.Empty);
+  rpc OpenCustomInventory(patchbukkit.itemstack.CustomInventoryRequest) returns (patchbukkit.itemstack.CustomInventoryResponse);
+  rpc GetCustomInventory(patchbukkit.itemstack.CustomInventoryRequest) returns (patchbukkit.itemstack.CustomInventoryResponse);
+  rpc SetCustomInventory(patchbukkit.itemstack.CustomInventoryRequest) returns (patchbukkit.itemstack.CustomInventoryResponse);
   rpc DispatchServerCommand(patchbukkit.entity.DispatchServerCommandRequest) returns (google.protobuf.Empty);
   rpc PlayerChat(patchbukkit.entity.PlayerChatRequest) returns (google.protobuf.Empty);
   rpc OpenWorkstation(patchbukkit.entity.OpenWorkstationRequest) returns (patchbukkit.entity.OpenWorkstationResponse);

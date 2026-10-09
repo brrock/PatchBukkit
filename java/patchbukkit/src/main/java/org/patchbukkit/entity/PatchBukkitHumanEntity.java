@@ -571,6 +571,10 @@ public class PatchBukkitHumanEntity
                         .setTarget(BridgeUtils.convertUuid(ec.getOwner().getUniqueId()))
                         .setEnderChest(true)
                         .build());
+            } else if (inventory.getType() == org.bukkit.event.inventory.InventoryType.CHEST
+                    && inventory instanceof org.patchbukkit.inventory.PatchBukkitInventory custom
+                    && custom.openNative(this)) {
+                // shown as a chest by Pumpkin
             } else if (NativeBridgeFfi.openWorkstation(
                     patchbukkit.entity.OpenWorkstationRequest.newBuilder()
                         .setViewer(BridgeUtils.convertUuid(getUniqueId()))

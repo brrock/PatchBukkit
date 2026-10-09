@@ -96,7 +96,7 @@ fn snbt_string(s: &str) -> String {
     out
 }
 
-fn pumpkin_item_to_proto(stack: &PumpkinItemStack) -> ProtoItemStack {
+pub(crate) fn pumpkin_item_to_proto(stack: &PumpkinItemStack) -> ProtoItemStack {
     if stack.is_empty() {
         ProtoItemStack {
             r#type: "minecraft:air".to_string(),
@@ -246,7 +246,7 @@ fn server_built_stack(key: &str, proto: &ProtoItemStack) -> Option<PumpkinItemSt
     Some(stack)
 }
 
-fn proto_item_to_pumpkin(proto: Option<&ProtoItemStack>) -> PumpkinItemStack {
+pub(crate) fn proto_item_to_pumpkin(proto: Option<&ProtoItemStack>) -> PumpkinItemStack {
     let Some(proto) = proto else {
         return PumpkinItemStack::EMPTY.clone();
     };

@@ -53,11 +53,62 @@ public class PatchBukkitInventory implements Inventory {
         Arrays.fill(this.contents, ItemStack.empty());
     }
 
-    /** Refreshes {@link #contents} from a backing store. No-op for plain inventories. */
-    protected void pullContents() {}
+    private static final java.util.concurrent.atomic.AtomicLong NEXT_NATIVE_ID = new java.util.concurrent.atomic.AtomicLong(1);
+    private final long nativeId = NEXT_NATIVE_ID.getAndIncrement();
+    /** True while Pumpkin shows this inventory and holds its live contents. */
+    private volatile boolean nativeBacked;
 
-    /** Writes {@link #contents} back to a backing store. No-op for plain inventories. */
-    protected void pushContents() {}
+    /**
+     * Shows this inventory to a player as a chest screen. Pumpkin then holds the live
+     * contents until every viewer has closed it.
+     */
+    public boolean openNative(@NotNull HumanEntity viewer) {
+        if (this.size % 9 != 0 || this.size < 9 || this.size > 54) return false;
+        var req = patchbukkit.itemstack.CustomInventoryRequest.newBuilder()
+            .setId(nativeId)
+            .setViewer(org.patchbukkit.bridge.BridgeUtils.convertUuid(viewer.getUniqueId()))
+            .setRows(this.size / 9)
+            .setTitle(this.title == null ? "" : this.title);
+        pullContents();
+        for (ItemStack item : this.contents) req.addItems(PatchBukkitPlayerInventory.toProto(item));
+        var resp = patchbukkit.bridge.NativeBridgeFfi.openCustomInventory(req.build());
+        if (resp != null && resp.getFound()) {
+            this.nativeBacked = true;
+            return true;
+        }
+        return false;
+    }
+
+    /** Refreshes {@link #contents} from a backing store. */
+    protected void pullContents() {
+        if (!nativeBacked) return;
+        try {
+            var resp = patchbukkit.bridge.NativeBridgeFfi.getCustomInventory(
+                patchbukkit.itemstack.CustomInventoryRequest.newBuilder().setId(nativeId).build());
+            if (resp == null || !resp.getFound()) {
+                nativeBacked = false; // closed by every viewer: the local copy is current
+                return;
+            }
+            for (int i = 0; i < this.size && i < resp.getItemsCount(); i++) {
+                this.contents[i] = PatchBukkitPlayerInventory.fromProto(resp.getItems(i));
+            }
+        } catch (Throwable t) {
+            org.patchbukkit.bridge.BridgeUtils.logBridgeFailure("getCustomInventory", t);
+        }
+    }
+
+    /** Writes {@link #contents} back to a backing store. */
+    protected void pushContents() {
+        if (!nativeBacked) return;
+        try {
+            var req = patchbukkit.itemstack.CustomInventoryRequest.newBuilder().setId(nativeId);
+            for (ItemStack item : this.contents) req.addItems(PatchBukkitPlayerInventory.toProto(item));
+            var resp = patchbukkit.bridge.NativeBridgeFfi.setCustomInventory(req.build());
+            if (resp == null || !resp.getFound()) nativeBacked = false;
+        } catch (Throwable t) {
+            org.patchbukkit.bridge.BridgeUtils.logBridgeFailure("setCustomInventory", t);
+        }
+    }
 
     /** Direct access for subclasses that sync with a backing store. */
     protected ItemStack[] rawContents() {

@@ -57,3 +57,20 @@ message SetPlayerEquipmentRequest {
 message EnderChestContents {
   repeated ItemStack items = 1;
 }
+
+// A plugin-created inventory (Bukkit createInventory) shown through Pumpkin.
+message CustomInventoryRequest {
+  uint64 id = 1;
+  // Open only: the viewer, the row count (1-6) and the title (legacy text).
+  patchbukkit.common.UUID viewer = 2;
+  uint32 rows = 3;
+  string title = 4;
+  // Open: the initial contents. Set: the contents to store.
+  repeated ItemStack items = 5;
+}
+
+message CustomInventoryResponse {
+  // False once Pumpkin no longer holds this inventory (every viewer closed it).
+  bool found = 1;
+  repeated ItemStack items = 2;
+}
