@@ -464,16 +464,25 @@ pub fn ffi_native_bridge_spawn_world_entity_impl(
         .or_else(|| worlds.first().cloned())?;
 
     let new_uuid = uuid::Uuid::new_v4();
-    let pos = Vector3::new(request.x, request.y, request.z);
 
     match request.entity_type.to_uppercase().as_str() {
         "EXPERIENCE_ORB" => {
             let amount = u32::try_from(request.experience.unwrap_or(0)).unwrap_or(0);
-            if amount > 0 {
-                let w = world.clone();
-                ctx.runtime.spawn(async move {
-                    pumpkin::entity::experience_orb::ExperienceOrbEntity::spawn(&w, pos, amount);
-                });
+            // The server's /summon makes 1-point orbs and reads no amount from NBT, so summon one
+            // per point (capped). Orbs built from this plugin's Pumpkin copy are never picked up.
+            for i in 0..amount.min(MAX_SUMMONED_ORBS) {
+                let id = if i == 0 { new_uuid } else { uuid::Uuid::new_v4() };
+                summon(
+                    ctx,
+                    world.clone(),
+                    format!(
+                        "summon minecraft:experience_orb {} {} {} {{UUID:{}}}",
+                        request.x,
+                        request.y,
+                        request.z,
+                        uuid_int_array(id)
+                    ),
+                );
             }
             return Some(SpawnWorldEntityResponse {
                 entity_uuid: Some(ProtoUuid {
@@ -498,8 +507,30 @@ pub fn ffi_native_bridge_spawn_world_entity_impl(
                     entity_id: 0,
                 });
             }
+            // Components the proto carries (enchantments), in the item NBT the server reads.
+            let mut enchants: Vec<String> = item
+                .enchantments
+                .iter()
+                .filter(|(name, level)| {
+                    **level > 0
+                        && !name.is_empty()
+                        && name
+                            .chars()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == ':')
+                })
+                .map(|(name, level)| {
+                    let name = if name.contains(':') { name.clone() } else { format!("minecraft:{name}") };
+                    format!("\"{name}\":{level}")
+                })
+                .collect();
+            enchants.sort();
+            let components = if enchants.is_empty() {
+                String::new()
+            } else {
+                format!(",components:{{\"minecraft:enchantments\":{{{}}}}}", enchants.join(","))
+            };
             let command = format!(
-                "summon minecraft:item {} {} {} {{UUID:{},Item:{{id:\"minecraft:{key}\",count:{}}}}}",
+                "summon minecraft:item {} {} {} {{UUID:{},Item:{{id:\"minecraft:{key}\",count:{}{components}}}}}",
                 request.x,
                 request.y,
                 request.z,
@@ -559,6 +590,7 @@ fn summon(ctx: &'static crate::java::native_callbacks::CallbackContext, world: A
         let mut source = pumpkin::command::CommandSender::Console.into_source(&server);
         source.silent = true;
         source.world = Some(world);
+        tracing::debug!("PatchBukkit summon: {command}");
         if let Err(e) = server.command_dispatcher.load().execute_input(&command, &source) {
             tracing::warn!("PatchBukkit: summon failed ({command}): {e:?}");
         }
@@ -839,6 +871,9 @@ pub fn ffi_native_bridge_get_block_drops_impl(
         .collect();
     Some(GetBlockDropsResponse { drops })
 }
+
+/// Upper bound on orbs summoned for one experience drop.
+const MAX_SUMMONED_ORBS: u32 = 256;
 
 /// Formats a UUID as the SNBT int array vanilla uses for an entity's `UUID` tag.
 fn uuid_int_array(uuid: uuid::Uuid) -> String {

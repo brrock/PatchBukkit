@@ -142,6 +142,7 @@ public class PatchBukkitEntity implements Entity {
 
     private static final java.util.concurrent.atomic.AtomicInteger NEXT_ENTITY_ID = new java.util.concurrent.atomic.AtomicInteger(1);
     protected int entityId;
+    private int placeholderEntityId;
 
     public PatchBukkitEntity(
         UUID uuid,
@@ -506,10 +507,15 @@ public class PatchBukkitEntity implements Entity {
                 }
             } catch (Throwable ignored) {}
         }
-        if (this.entityId <= 0) {
-            this.entityId = NEXT_ENTITY_ID.incrementAndGet();
+        if (this.entityId > 0) {
+            return this.entityId;
         }
-        return this.entityId;
+        // Not in the world yet (spawns are applied on the next server step): hand out a stable
+        // placeholder but keep asking the server, so the real id replaces it once known.
+        if (this.placeholderEntityId <= 0) {
+            this.placeholderEntityId = NEXT_ENTITY_ID.incrementAndGet();
+        }
+        return this.placeholderEntityId;
     }
 
     @Override

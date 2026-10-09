@@ -241,6 +241,14 @@ public class PatchBukkitRegistry<P, B extends Keyed> implements Registry<B> {
         if (key == null) {
             return null;
         }
+        if (RegistryKey.ENCHANTMENT.equals(registryKey)) {
+            // Answered without initialising first: Enchantment.<clinit> calls back in here while
+            // the registry is still being filled.
+            PatchBukkitEnchantment ench = PatchBukkitEnchantment.vanilla(key);
+            if (ench != null) {
+                return (B) ench;
+            }
+        }
         ensureInitialized();
         B value = entries.get(key);
         if (value != null) {

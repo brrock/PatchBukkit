@@ -30,6 +30,11 @@ public class PatchBukkitEnchantment extends Enchantment {
     private record Def(String key, String legacyName, int maxLevel, EnchantmentTarget target,
                        boolean treasure, boolean cursed, int weight, int anvilCost) {}
 
+    /**
+     * Static state lives here, not on this class: loading PatchBukkitEnchantment first runs
+     * Enchantment.<clinit>, which calls {@link #vanilla} before this class's own statics exist.
+     */
+    private static final class Holder {
     private static final List<Def> VANILLA = List.of(
         new Def("protection", "PROTECTION_ENVIRONMENTAL", 4, EnchantmentTarget.ARMOR, false, false, 10, 1),
         new Def("fire_protection", "PROTECTION_FIRE", 4, EnchantmentTarget.ARMOR, false, false, 5, 2),
@@ -75,9 +80,36 @@ public class PatchBukkitEnchantment extends Enchantment {
         new Def("swift_sneak", "SWIFT_SNEAK", 3, EnchantmentTarget.ARMOR_LEGS, true, false, 1, 8),
         new Def("lunge", "LUNGE", 3, EnchantmentTarget.WEAPON, false, false, 5, 2)
     );
+        private static final java.util.Map<String, PatchBukkitEnchantment> INSTANCES = new java.util.concurrent.ConcurrentHashMap<>();
+    }
+
+    /**
+     * One instance per vanilla enchantment, shared by the registry. Constructing the first one
+     * runs Enchantment.<clinit>, which looks the constants up in the registry again; those
+     * lookups are answered from here (see {@link #vanilla(NamespacedKey)}).
+     */
 
     public static List<PatchBukkitEnchantment> createVanilla() {
-        return VANILLA.stream().map(PatchBukkitEnchantment::new).toList();
+        return Holder.VANILLA.stream().map(def -> vanilla(NamespacedKey.minecraft(def.key()))).toList();
+    }
+
+    public static PatchBukkitEnchantment vanilla(NamespacedKey key) {
+        if (key == null || !NamespacedKey.MINECRAFT.equals(key.getNamespace())) {
+            return null;
+        }
+        PatchBukkitEnchantment existing = Holder.INSTANCES.get(key.getKey());
+        if (existing != null) {
+            return existing;
+        }
+        for (Def def : Holder.VANILLA) {
+            if (def.key().equals(key.getKey())) {
+                // Not computeIfAbsent: the constructor can re-enter this method via <clinit>.
+                PatchBukkitEnchantment created = new PatchBukkitEnchantment(def);
+                PatchBukkitEnchantment raced = Holder.INSTANCES.putIfAbsent(def.key(), created);
+                return raced != null ? raced : created;
+            }
+        }
+        return null;
     }
 
     private final Def def;
