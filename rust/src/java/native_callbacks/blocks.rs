@@ -52,11 +52,25 @@ fn load_chunk(world: &Arc<World>, pos: Vector2<i32>) -> Option<Arc<ChunkData>> {
     }
     let ctx = CALLBACK_CONTEXT.get()?;
     let level = world.level.clone();
-    Some(
-        ctx.runtime
-            .block_on(async move { level.get_or_fetch_chunk(pos, Arc::clone).await }),
-    )
+    // The calling thread may already be inside a runtime context (the JVM worker runs Java
+    // commands from one), where `block_on` panics and aborts the server. Run the load on the
+    // runtime and wait for it with a plain channel instead. A chunk that isn't loaded yet does
+    // not always arrive while the JVM thread is blocked here, so give up after a while rather
+    // than hang the JVM; the caller treats the chunk as unavailable.
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    ctx.runtime.spawn(async move {
+        let _ = tx.send(level.get_or_fetch_chunk(pos, Arc::clone).await);
+    });
+    match rx.recv_timeout(CHUNK_LOAD_TIMEOUT) {
+        Ok(chunk) => Some(chunk),
+        Err(_) => {
+            tracing::warn!("Timed out loading chunk {}, {} for a block access", pos.x, pos.y);
+            None
+        }
+    }
 }
+
+const CHUNK_LOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// `minecraft:block[prop=value,...]`, the format `BlockData#getAsString` uses.
 pub(crate) fn state_to_string(state_id: BlockStateId) -> String {
