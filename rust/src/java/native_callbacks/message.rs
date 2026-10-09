@@ -10,7 +10,15 @@ pub fn ffi_native_bridge_send_message_impl(request: SendMessageRequest) -> Optio
 
     let player = ctx.plugin_context.server.get_player_by_uuid(player_uuid);
     if let Some(player) = player {
-        player.send_system_message(&TextComponent::from_legacy_string(&request.message));
+        let text = if request.json {
+            serde_json::from_str::<TextComponent>(&request.message).unwrap_or_else(|e| {
+                tracing::warn!("SendMessage: invalid JSON text component ({e}), sending as legacy text");
+                TextComponent::from_legacy_string(&request.message)
+            })
+        } else {
+            TextComponent::from_legacy_string(&request.message)
+        };
+        player.send_system_message(&text);
     }
 
     Some(())

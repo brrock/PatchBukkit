@@ -144,12 +144,27 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
         this.spigot = new Player.Spigot() {
             @Override
             public void sendMessage(@NotNull BaseComponent component) {
-                PatchBukkitPlayer.this.sendMessage(BaseComponent.toLegacyText(component));
+                sendMessage(new BaseComponent[] {component});
             }
 
             @Override
             public void sendMessage(@NotNull BaseComponent... components) {
-                PatchBukkitPlayer.this.sendMessage(BaseComponent.toLegacyText(components));
+                // Send as JSON so translatable, hover and click parts reach the client intact.
+                // Use the 1.21.5+ format (snake_case events), which is what Pumpkin parses.
+                // Plugins that hook custom components into Bungee's Gson (WorldEdit's text
+                // adapter) register them on this serializer too.
+                String json;
+                try {
+                    var serializer = net.md_5.bungee.chat.VersionedComponentSerializer.forVersion(
+                        net.md_5.bungee.chat.ChatVersion.V1_21_5);
+                    json = components.length == 1
+                        ? serializer.toString(components[0])
+                        : serializer.toString(components);
+                } catch (Throwable t) {
+                    PatchBukkitPlayer.this.sendMessage(BaseComponent.toLegacyText(components));
+                    return;
+                }
+                PatchBukkitPlayer.this.sendJsonMessage(json);
             }
 
             @Override
@@ -157,7 +172,7 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 if (position == net.md_5.bungee.api.ChatMessageType.ACTION_BAR) {
                     PatchBukkitPlayer.this.sendActionBar(BaseComponent.toLegacyText(components));
                 } else {
-                    PatchBukkitPlayer.this.sendMessage(BaseComponent.toLegacyText(components));
+                    sendMessage(components);
                 }
             }
 
@@ -348,6 +363,24 @@ public class PatchBukkitPlayer extends PatchBukkitHumanEntity implements Player 
                 .build();
             NativeBridgeFfi.sendMessage(request);
         } catch (Throwable ignored) {}
+    }
+
+    /** Sends a JSON text component as a system chat message. */
+    public void sendJsonMessage(@NotNull String json) {
+        try {
+            var request = patchbukkit.message.SendMessageRequest.newBuilder()
+                .setUuid(BridgeUtils.convertUuid(this.getUniqueId()))
+                .setMessage(json)
+                .setJson(true)
+                .build();
+            NativeBridgeFfi.sendMessage(request);
+        } catch (Throwable ignored) {}
+    }
+
+    @Override
+    public void sendMessage(@NotNull Component message) {
+        if (message == null) return;
+        sendJsonMessage(net.kyori.adventure.text.serializer.gson.GsonComponentSerializer.gson().serialize(message));
     }
 
     @Override
