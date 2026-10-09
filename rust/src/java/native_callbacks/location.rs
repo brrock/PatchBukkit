@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use pumpkin::entity::EntityBase;
 use crate::{
     java::native_callbacks::CALLBACK_CONTEXT,
     proto::patchbukkit::common::{Location, Uuid, Vec3, World},
@@ -20,7 +23,13 @@ pub fn ffi_native_bridge_get_location_impl(entity_uuid: Uuid) -> Option<Location
         .worlds
         .load()
         .iter()
-        .find_map(|world| world.get_entity_by_uuid(uuid))?;
+        .find_map(|world| {
+                // Players live in the world's player list, not its entity list.
+                world
+                    .get_player_by_uuid(uuid)
+                    .map(|player| player as Arc<dyn EntityBase>)
+                    .or_else(|| world.get_entity_by_uuid(uuid))
+            })?;
 
     let entity = entity.get_entity();
     let position = entity.pos.load();
