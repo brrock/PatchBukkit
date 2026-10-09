@@ -232,11 +232,18 @@ message SignLinesRequest {
   int32 x = 2;
   int32 y = 3;
   int32 z = 4;
-  // Set only: the four front lines (legacy formatted text).
+  // Set only: the four lines (legacy formatted text).
   repeated string lines = 5;
+  // Which side: false for the front, true for the back.
+  bool back = 6;
+  // Set only: glowing text and dye colour (vanilla dye id), when given.
+  optional bool glowing = 7;
+  optional int32 color = 8;
 }
 
 message SignLinesResponse {
   bool found = 1;
   repeated string lines = 2;
+  bool glowing = 3;
+  int32 color = 4;
 }

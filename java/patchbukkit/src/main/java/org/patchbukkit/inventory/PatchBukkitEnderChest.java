@@ -40,14 +40,16 @@ public class PatchBukkitEnderChest extends PatchBukkitInventory {
     protected void pushContents() {
         ItemStack[] contents = rawContents();
         for (int i = 0; i < contents.length; i++) {
-            ItemStack item = contents[i] == null ? ItemStack.empty() : contents[i];
-            if (lastPulled != null && item.equals(lastPulled[i])) continue;
+            ItemStack item = contents[i];
+            var proto = PatchBukkitPlayerInventory.toProto(item);
+            // Compare as protos: ItemStack.equals on the API's empty stack is not null-safe here.
+            if (lastPulled != null && proto.equals(PatchBukkitPlayerInventory.toProto(lastPulled[i]))) continue;
             try {
                 NativeBridgeFfi.setEnderChestSlot(
                     patchbukkit.itemstack.SetPlayerInventorySlotRequest.newBuilder()
                         .setUuid(BridgeUtils.convertUuid(owner.getUniqueId()))
                         .setSlot(i)
-                        .setItem(PatchBukkitPlayerInventory.toProto(item))
+                        .setItem(proto)
                         .build());
             } catch (Throwable t) { BridgeUtils.logBridgeFailure("setEnderChestSlot", t); }
         }

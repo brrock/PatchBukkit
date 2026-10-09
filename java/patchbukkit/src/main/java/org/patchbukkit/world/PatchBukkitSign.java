@@ -26,19 +26,56 @@ public final class PatchBukkitSign implements InvocationHandler {
     private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacySection();
 
     private final PatchBukkitBlockState base;
-    private final String[] lines = {"", "", "", ""};
+    private final SideState front = new SideState(false);
+    private final SideState back = new SideState(true);
     private boolean waxed;
 
-    private PatchBukkitSign(Block block) {
-        this.base = new PatchBukkitBlockState(block);
-        try {
-            var resp = NativeBridgeFfi.getSignLines(request(block).build());
-            if (resp != null) {
+    /** One side's text, as held by this snapshot. */
+    private final class SideState {
+        final boolean isBack;
+        final String[] lines = {"", "", "", ""};
+        boolean glowing;
+        org.bukkit.DyeColor color = org.bukkit.DyeColor.BLACK;
+
+        SideState(boolean isBack) {
+            this.isBack = isBack;
+        }
+
+        void load(Block block) {
+            try {
+                var resp = NativeBridgeFfi.getSignLines(request(block).setBack(isBack).build());
+                if (resp == null || !resp.getFound()) return;
                 for (int i = 0; i < 4 && i < resp.getLinesCount(); i++) {
                     lines[i] = toLegacy(resp.getLines(i));
                 }
+                glowing = resp.getGlowing();
+                org.bukkit.DyeColor[] dyes = org.bukkit.DyeColor.values();
+                if (resp.getColor() >= 0 && resp.getColor() < dyes.length) color = dyes[resp.getColor()];
+            } catch (Throwable t) { BridgeUtils.logBridgeFailure("getSignLines", t); }
+        }
+
+        boolean push(Block block) {
+            try {
+                var req = request(block).setBack(isBack).setGlowing(glowing).setColor(color.ordinal());
+                for (String line : lines) req.addLines(line == null ? "" : line);
+                var resp = NativeBridgeFfi.setSignLines(req.build());
+                return resp != null && resp.getFound();
+            } catch (Throwable t) {
+                BridgeUtils.logBridgeFailure("setSignLines", t);
+                return false;
             }
-        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getSignLines", t); }
+        }
+
+        SignSide proxy() {
+            return (SignSide) Proxy.newProxyInstance(PatchBukkitSign.class.getClassLoader(),
+                new Class<?>[] {SignSide.class}, (p, method, args) -> sideCall(this, method, args));
+        }
+    }
+
+    private PatchBukkitSign(Block block) {
+        this.base = new PatchBukkitBlockState(block);
+        front.load(block);
+        back.load(block);
     }
 
     public static Sign create(Block block) {
@@ -70,24 +107,8 @@ public final class PatchBukkitSign implements InvocationHandler {
         return raw;
     }
 
-    private boolean push(boolean force) {
-        try {
-            var req = request(base.getBlock());
-            for (String line : lines) req.addLines(line == null ? "" : line);
-            var resp = NativeBridgeFfi.setSignLines(req.build());
-            return resp != null && resp.getFound();
-        } catch (Throwable t) {
-            BridgeUtils.logBridgeFailure("setSignLines", t);
-            return false;
-        }
-    }
-
-    private SignSide side() {
-        return (SignSide) Proxy.newProxyInstance(PatchBukkitSign.class.getClassLoader(),
-            new Class<?>[] {SignSide.class}, (proxy, method, args) -> sideCall(method, args));
-    }
-
-    private Object sideCall(Method method, Object[] args) throws Throwable {
+    private static Object sideCall(SideState side, Method method, Object[] args) throws Throwable {
+        String[] lines = side.lines;
         switch (method.getName()) {
             case "getLine": return lines[(int) args[0]];
             case "setLine": lines[(int) args[0]] = args[1] == null ? "" : (String) args[1]; return null;
@@ -101,12 +122,12 @@ public final class PatchBukkitSign implements InvocationHandler {
                 for (String l : lines) out.add(LEGACY.deserialize(l));
                 return out;
             }
-            case "isGlowingText": return false;
-            case "setGlowingText": return null;
-            case "getColor": return org.bukkit.DyeColor.BLACK;
-            case "setColor": return null;
-            case "hashCode": return System.identityHashCode(this);
-            case "equals": return args[0] == this;
+            case "isGlowingText": return side.glowing;
+            case "setGlowingText": side.glowing = (boolean) args[0]; return null;
+            case "getColor": return side.color;
+            case "setColor": side.color = args[0] == null ? org.bukkit.DyeColor.BLACK : (org.bukkit.DyeColor) args[0]; return null;
+            case "hashCode": return System.identityHashCode(side);
+            case "equals": return args[0] == side;
             case "toString": return "PatchBukkitSignSide";
             default: return defaultValue(method.getReturnType());
         }
@@ -117,20 +138,22 @@ public final class PatchBukkitSign implements InvocationHandler {
         switch (method.getName()) {
             case "getLine", "setLine", "getLines", "line", "lines", "isGlowingText", "setGlowingText", "getColor", "setColor":
                 if (method.getDeclaringClass() == Object.class) break;
-                return sideCall(method, args);
-            case "getSide": return side();
-            case "getTargetSide": return side();
+                return sideCall(front, method, args);
+            case "getSide": return args[0] == Side.BACK ? back.proxy() : front.proxy();
+            case "getTargetSide": return front.proxy();
             case "getInteractableSideFor": return Side.FRONT;
             case "isWaxed": case "isEditable":
                 return method.getName().equals("isWaxed") == waxed;
             case "setWaxed": waxed = (boolean) args[0]; return null;
             case "setEditable": waxed = !(boolean) args[0]; return null;
-            case "update":
-                return push(args != null && args.length > 0 && (boolean) args[0]);
+            case "update": {
+                boolean ok = front.push(base.getBlock());
+                return back.push(base.getBlock()) && ok;
+            }
             case "getAllowedEditorUniqueId": return null;
             case "hashCode": return System.identityHashCode(proxy);
             case "equals": return args[0] == proxy;
-            case "toString": return "PatchBukkitSign" + java.util.Arrays.toString(lines);
+            case "toString": return "PatchBukkitSign" + java.util.Arrays.toString(front.lines);
             default: break;
         }
         try {

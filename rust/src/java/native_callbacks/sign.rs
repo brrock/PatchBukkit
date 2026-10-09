@@ -11,15 +11,16 @@ use pumpkin_util::math::{position::BlockPos, vector3::Vector3};
 use crate::java::native_callbacks::CALLBACK_CONTEXT;
 use crate::proto::patchbukkit::world::{SignLinesRequest, SignLinesResponse};
 
-/// Runs `f` on the front text of the sign at `pos`.
+/// Runs `f` on one side's text of the sign at `pos`.
 ///
 /// Block entities are created by the server, so `downcast_ref` from the plugin's
 /// own copy of `pumpkin` fails (different `TypeId`). We identify the entity by its
 /// resource location instead and reinterpret it as our identically laid out
 /// type, the same assumption the plugin makes for `Player` and `ItemStack`.
-fn with_front_text<R>(
+fn with_text<R>(
     world: &World,
     pos: &BlockPos,
+    back: bool,
     f: impl FnOnce(&SignText) -> R,
 ) -> Option<(R, Arc<dyn BlockEntity>)> {
     let entity = world.get_block_entity(pos)?;
@@ -27,11 +28,11 @@ fn with_front_text<R>(
     let result = match entity.resource_location() {
         SignBlockEntity::ID => {
             let sign = unsafe { &*any.cast::<SignBlockEntity>() };
-            f(&sign.front_text)
+            f(if back { &sign.back_text } else { &sign.front_text })
         }
         HangingSignBlockEntity::ID => {
             let sign = unsafe { &*any.cast::<HangingSignBlockEntity>() };
-            f(&sign.front_text)
+            f(if back { &sign.back_text } else { &sign.front_text })
         }
         _ => return None,
     };
@@ -40,10 +41,28 @@ fn with_front_text<R>(
 
 /// Replaces the front lines of a sign and sends the change to clients.
 pub fn write_sign_lines(world: &World, pos: &BlockPos, lines: &[String]) -> bool {
+    write_sign(world, pos, false, lines, None, None)
+}
+
+/// Replaces one side's lines (and optionally glow and dye colour) and sends the change.
+pub fn write_sign(
+    world: &World,
+    pos: &BlockPos,
+    back: bool,
+    lines: &[String],
+    glowing: Option<bool>,
+    color: Option<i32>,
+) -> bool {
     let new: [Box<str>; 4] = std::array::from_fn(|i| {
         Box::<str>::from(lines.get(i).map_or("", String::as_str))
     });
-    let Some(((), entity)) = with_front_text(world, pos, |text| {
+    let Some(((), entity)) = with_text(world, pos, back, |text| {
+        if let Some(glowing) = glowing {
+            text.set_has_glowing_text(glowing);
+        }
+        if let Some(dye) = color.and_then(|c| u8::try_from(c).ok()).and_then(pumpkin_data::dye_color::DyeColor::by_id) {
+            text.set_color(dye);
+        }
         *text
             .messages
             .lock()
@@ -95,22 +114,30 @@ fn pos_of(request: &SignLinesRequest) -> BlockPos {
 
 pub fn ffi_native_bridge_get_sign_lines_impl(request: SignLinesRequest) -> Option<SignLinesResponse> {
     let world = find_world(&request)?;
-    let lines = with_front_text(&world, &pos_of(&request), |text| {
-        text.messages
+    let read = with_text(&world, &pos_of(&request), request.back, |text| SignLinesResponse {
+        found: true,
+        lines: text
+            .messages
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .iter()
             .map(ToString::to_string)
-            .collect::<Vec<_>>()
+            .collect(),
+        glowing: text.has_glowing_text(),
+        color: i32::from(text.get_color().id()),
     });
-    Some(match lines {
-        Some((lines, _)) => SignLinesResponse { found: true, lines },
-        None => SignLinesResponse::default(),
-    })
+    Some(read.map(|(resp, _)| resp).unwrap_or_default())
 }
 
 pub fn ffi_native_bridge_set_sign_lines_impl(request: SignLinesRequest) -> Option<SignLinesResponse> {
     let world = find_world(&request)?;
-    let found = write_sign_lines(&world, &pos_of(&request), &request.lines);
-    Some(SignLinesResponse { found, lines: vec![] })
+    let found = write_sign(
+        &world,
+        &pos_of(&request),
+        request.back,
+        &request.lines,
+        request.glowing,
+        request.color,
+    );
+    Some(SignLinesResponse { found, ..Default::default() })
 }
