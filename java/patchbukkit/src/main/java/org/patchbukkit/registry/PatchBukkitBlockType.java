@@ -34,6 +34,32 @@ public final class PatchBukkitBlockType {
             || name.endsWith("_CONCRETE_POWDER") || name.endsWith("ANVIL");
     }
 
+    private static final java.util.Set<String> INTERACTABLE = java.util.Set.of(
+        "ANVIL", "CHIPPED_ANVIL", "DAMAGED_ANVIL", "BARREL", "BEACON", "BEE_NEST", "BEEHIVE", "BELL",
+        "BLAST_FURNACE", "BREWING_STAND", "CAKE", "CAMPFIRE", "SOUL_CAMPFIRE", "CANDLE",
+        "CARTOGRAPHY_TABLE", "CAULDRON", "WATER_CAULDRON", "LAVA_CAULDRON", "POWDER_SNOW_CAULDRON",
+        "CAVE_VINES", "CAVE_VINES_PLANT", "CHEST", "TRAPPED_CHEST", "ENDER_CHEST", "CHISELED_BOOKSHELF",
+        "COMMAND_BLOCK", "CHAIN_COMMAND_BLOCK", "REPEATING_COMMAND_BLOCK", "COMPARATOR", "COMPOSTER",
+        "CRAFTER", "CRAFTING_TABLE", "DAYLIGHT_DETECTOR", "DECORATED_POT", "DISPENSER", "DROPPER",
+        "DRAGON_EGG", "ENCHANTING_TABLE", "FLOWER_POT", "FURNACE", "GRINDSTONE", "HOPPER", "JIGSAW",
+        "JUKEBOX", "LECTERN", "LEVER", "LOOM", "MOVING_PISTON", "NOTE_BLOCK", "PUMPKIN",
+        "REDSTONE_ORE", "DEEPSLATE_REDSTONE_ORE", "REDSTONE_WIRE", "REPEATER", "RESPAWN_ANCHOR",
+        "SMITHING_TABLE", "SMOKER", "STONECUTTER", "STRUCTURE_BLOCK", "SWEET_BERRY_BUSH", "VAULT");
+
+    /**
+     * Whether right-clicking the block does something (opens it, toggles it, ...), like vanilla's
+     * {@code Material#isInteractable}. The server doesn't report this, so it's derived from names.
+     */
+    static boolean isInteractable(Material material) {
+        String name = material.name();
+        if (INTERACTABLE.contains(name)) return true;
+        if (name.startsWith("IRON_") || name.startsWith("LEGACY_")) return false;
+        return name.endsWith("_DOOR") || name.endsWith("_TRAPDOOR") || name.endsWith("_FENCE_GATE")
+            || name.endsWith("_BUTTON") || name.endsWith("_BED") || name.endsWith("SHULKER_BOX")
+            || name.endsWith("_SIGN") || name.endsWith("_CANDLE") || name.endsWith("_CANDLE_CAKE")
+            || name.startsWith("POTTED_");
+    }
+
     public static BlockType create(Material material) {
         if (material == null || material.isLegacy()) return null;
 
@@ -89,6 +115,9 @@ public final class PatchBukkitBlockType {
                     }
                     if ("isOccluding".equals(name)) {
                         return hasFlag(material, BlockStateRegistry.FLAG_OCCLUDING);
+                    }
+                    if ("isInteractable".equals(name)) {
+                        return isInteractable(material);
                     }
                     if ("hasGravity".equals(name) || "isGravity".equals(name)) {
                         return hasGravity(material);
