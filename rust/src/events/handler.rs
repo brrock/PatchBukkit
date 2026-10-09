@@ -2523,6 +2523,24 @@ impl PatchBukkitEvent for pumpkin::plugin::block::sign_change::SignChangeEvent {
         }
     }
 
+    fn apply_modifications(&mut self, _server: &Arc<Server>, data: Data) -> Option<()> {
+        let Data::SignChange(e) = data else {
+            return Some(());
+        };
+        if pumpkin::plugin::Cancellable::cancelled(self) || e.lines == self.lines {
+            return Some(());
+        }
+        // Pumpkin writes the lines from the packet, not from the event, so store the
+        // plugin's lines ourselves and stop Pumpkin from overwriting them.
+        let world = self.player.living_entity.entity.world.load_full();
+        if crate::java::native_callbacks::sign::write_sign_lines(&world, &self.block_pos, &e.lines) {
+            crate::java::native_callbacks::sign::clear_sign_editor(&world, &self.block_pos);
+            pumpkin::plugin::Cancellable::set_cancelled(self, true);
+            self.lines = e.lines;
+        }
+        Some(())
+    }
+
     fn set_cancelled(&mut self, cancelled: bool) {
         pumpkin::plugin::Cancellable::set_cancelled(self, cancelled);
     }

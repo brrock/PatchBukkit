@@ -226,3 +226,17 @@ message GetForceLoadedChunksResponse {
 message SaveWorldRequest {
   patchbukkit.common.UUID world_uuid = 1;
 }
+
+message SignLinesRequest {
+  patchbukkit.common.UUID world_uuid = 1;
+  int32 x = 2;
+  int32 y = 3;
+  int32 z = 4;
+  // Set only: the four front lines (legacy formatted text).
+  repeated string lines = 5;
+}
+
+message SignLinesResponse {
+  bool found = 1;
+  repeated string lines = 2;
+}

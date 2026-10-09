@@ -154,6 +154,9 @@ public class PatchBukkitBlock implements Block {
 
     @Override
     public @NotNull BlockState getState(boolean useSnapshot) {
+        if (PatchBukkitSign.isSign(getType())) {
+            return PatchBukkitSign.create(this);
+        }
         return new PatchBukkitBlockState(this);
     }
 

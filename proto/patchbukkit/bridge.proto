@@ -104,6 +104,8 @@ service NativeBridge {
   rpc SpawnParticle(patchbukkit.world.SpawnParticleRequest) returns (google.protobuf.Empty);
   rpc GetWorlds(patchbukkit.common.EmptyRequest) returns (patchbukkit.world.GetWorldsResponse);
   rpc GetWorldBorder(patchbukkit.world.GetWorldBorderRequest) returns (patchbukkit.world.WorldBorderData);
+  rpc GetSignLines(patchbukkit.world.SignLinesRequest) returns (patchbukkit.world.SignLinesResponse);
+  rpc SetSignLines(patchbukkit.world.SignLinesRequest) returns (patchbukkit.world.SignLinesResponse);
   rpc SetWorldBorder(patchbukkit.world.SetWorldBorderRequest) returns (google.protobuf.Empty);
 
   rpc RegisterEvent(patchbukkit.events.RegisterEventRequest) returns (google.protobuf.Empty);

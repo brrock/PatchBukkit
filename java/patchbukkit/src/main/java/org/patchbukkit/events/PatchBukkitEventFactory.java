@@ -1405,6 +1405,17 @@ public class PatchBukkitEventFactory {
                             .setJoinMessage(serializeMessage(now))
                     ).build());
                 }
+            } else if (event instanceof org.bukkit.event.block.SignChangeEvent sign) {
+                var data = patchbukkit.events.SignChangeEvent.newBuilder()
+                    .setPlayerUuid(UUID.newBuilder().setValue(sign.getPlayer().getUniqueId().toString()))
+                    .setBlockX(sign.getBlock().getX())
+                    .setBlockY(sign.getBlock().getY())
+                    .setBlockZ(sign.getBlock().getZ());
+                for (int i = 0; i < 4; i++) {
+                    String line = sign.getLine(i);
+                    data.addLines(line == null ? "" : line);
+                }
+                builder.setData(Event.newBuilder().setSignChange(data).build());
             } else if (event instanceof org.bukkit.event.player.PlayerQuitEvent quit) {
                 Component original = ORIGINAL_JOIN_QUIT_MESSAGES.remove(quit);
                 Component now = quit.quitMessage();

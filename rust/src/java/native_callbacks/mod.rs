@@ -42,6 +42,8 @@ pub mod entity_state;
 pub use entity_state::*;
 
 pub mod world;
+pub mod sign;
+pub use sign::*;
 pub use world::*;
 
 pub mod itemstack;
