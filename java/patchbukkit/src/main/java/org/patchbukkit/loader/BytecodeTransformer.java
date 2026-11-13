@@ -49,6 +49,11 @@ public final class BytecodeTransformer {
                     return "org/patchbukkit/entity/PatchBukkitPlayer";
                 }
 
+                // Remap CraftHumanEntity -> PatchBukkitHumanEntity, the base of every Player we hand out
+                if (internalName.equals("org/bukkit/craftbukkit/entity/CraftHumanEntity")) {
+                    return "org/patchbukkit/entity/PatchBukkitHumanEntity";
+                }
+
                 // Remap CraftScheduler -> BukkitScheduler
                 if (internalName.equals("org/bukkit/craftbukkit/scheduler/CraftScheduler")) {
                     return "org/bukkit/scheduler/BukkitScheduler";
@@ -57,6 +62,50 @@ public final class BytecodeTransformer {
                 return super.map(internalName);
             }
         };
+    }
+
+    private static final String URL_CLASS_LOADER = "java/net/URLClassLoader";
+    private static final String TRANSFORMING_URL_CLASS_LOADER = "org/patchbukkit/loader/TransformingURLClassLoader";
+    private static final String REFLECTION_REDIRECTS = "org/patchbukkit/loader/ReflectionRedirects";
+
+    /**
+     * Routes {@code Class.forName} through {@link ReflectionRedirects} and makes plugin class
+     * loaders that extend {@code URLClassLoader} directly extend {@link TransformingURLClassLoader},
+     * so the classes they load are transformed too.
+     */
+    private static final class PluginReflectionVisitor extends ClassVisitor {
+        private boolean swapLoaderSuperclass;
+
+        PluginReflectionVisitor(ClassVisitor cv) {
+            super(Opcodes.ASM9, cv);
+        }
+
+        @Override
+        public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
+            if (URL_CLASS_LOADER.equals(superName)) {
+                swapLoaderSuperclass = true;
+                superName = TRANSFORMING_URL_CLASS_LOADER;
+            }
+            super.visit(version, access, name, signature, superName, interfaces);
+        }
+
+        @Override
+        public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+            MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
+            return new MethodVisitor(Opcodes.ASM9, mv) {
+                @Override
+                public void visitMethodInsn(int opcode, String owner, String methodName, String methodDesc, boolean isInterface) {
+                    if (opcode == Opcodes.INVOKESTATIC && "java/lang/Class".equals(owner) && "forName".equals(methodName)
+                        && ("(Ljava/lang/String;)Ljava/lang/Class;".equals(methodDesc)
+                            || "(Ljava/lang/String;ZLjava/lang/ClassLoader;)Ljava/lang/Class;".equals(methodDesc))) {
+                        owner = REFLECTION_REDIRECTS;
+                    } else if (swapLoaderSuperclass && opcode == Opcodes.INVOKESPECIAL && URL_CLASS_LOADER.equals(owner)) {
+                        owner = TRANSFORMING_URL_CLASS_LOADER;
+                    }
+                    super.visitMethodInsn(opcode, owner, methodName, methodDesc, isInterface);
+                }
+            };
+        }
     }
 
     private BytecodeTransformer() {}
@@ -70,7 +119,8 @@ public final class BytecodeTransformer {
             String className = reader.getClassName();
             ClassWriter writer = new ClassWriter(reader, 0);
             Remapper remapper = createRemapper(className);
-            ClassVisitor cv = new ClassRemapper(writer, remapper);
+            ClassVisitor cv = new PluginReflectionVisitor(writer);
+            cv = new ClassRemapper(cv, remapper);
 
             if (className != null && className.contains("CraftBukkitReflection")) {
                 cv = new ClassVisitor(Opcodes.ASM9, cv) {

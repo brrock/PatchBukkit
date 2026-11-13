@@ -30,6 +30,13 @@ impl EventManager {
         payload: JvmEventPayload,
         plugin_name: String,
     ) -> Result<FireEventResponse> {
+        if let Some(ref event) = payload.event.data
+            && matches!(event, Data::PlayerLogin(_))
+            && let Some(ref player) = payload.context.player
+        {
+            Self::register_player(env, player, &payload.context.server)?;
+        }
+
         let bytes = payload.event.encode_to_vec();
         let j_bytes = env.byte_array_from_slice(&bytes)?;
         let plugin_name_jstr = env.new_string(&plugin_name)?;

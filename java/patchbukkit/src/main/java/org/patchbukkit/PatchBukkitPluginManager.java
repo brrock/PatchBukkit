@@ -11,6 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
 import org.bukkit.Server;
+import org.bukkit.command.SimpleCommandMap;
 import org.bukkit.event.Event;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -29,12 +30,36 @@ public class PatchBukkitPluginManager implements PluginManager {
     private final Server server;
     private final PatchBukkitEventManager eventManager;
     private final Map<String, Plugin> plugins = new ConcurrentHashMap<>();
+    // Registration (load) order, used for getPlugins() and reversed for disablePlugins() as in Bukkit.
+    private final java.util.concurrent.CopyOnWriteArrayList<Plugin> loadOrder = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final SimplePluginManager simplePluginManager;
     PermissionManager permissionManager;
 
-    public PatchBukkitPluginManager(Server server) {
+    public PatchBukkitPluginManager(Server server, SimpleCommandMap commandMap) {
         this.server = server;
         this.eventManager = new PatchBukkitEventManager(server);
-        this.permissionManager = new PatchBukkitPermissionManager();
+        // Same layout as Paper: Server#getPluginManager() is a SimplePluginManager that delegates
+        // here, and permission state lives in its public maps so plugins can inject into them.
+        this.simplePluginManager = new SimplePluginManager(server, commandMap);
+        this.simplePluginManager.paperPluginManager = this;
+        this.permissionManager = new PatchBukkitPermissionManager(this.simplePluginManager);
+    }
+
+    /** The {@link SimplePluginManager} handed out by {@link Server#getPluginManager()}. */
+    public SimplePluginManager getSimplePluginManager() {
+        return simplePluginManager;
+    }
+
+    /** Unwraps the server's plugin manager to the PatchBukkit implementation, or returns null. */
+    public static @Nullable PatchBukkitPluginManager unwrap(@Nullable PluginManager pluginManager) {
+        if (pluginManager instanceof PatchBukkitPluginManager patchBukkit) {
+            return patchBukkit;
+        }
+        if (pluginManager instanceof SimplePluginManager simple
+            && simple.paperPluginManager instanceof PatchBukkitPluginManager patchBukkit) {
+            return patchBukkit;
+        }
+        return null;
     }
 
     public PatchBukkitEventManager getEventManager() {
@@ -50,6 +75,7 @@ public class PatchBukkitPluginManager implements PluginManager {
             return;
         }
         plugins.put(plugin.getName().toLowerCase(java.util.Locale.ENGLISH), plugin);
+        loadOrder.addIfAbsent(plugin);
         if (plugin.getDescription() != null && plugin.getDescription().getProvides() != null) {
             for (String provided : plugin.getDescription().getProvides()) {
                 if (provided != null && !provided.isBlank()) {
@@ -69,7 +95,7 @@ public class PatchBukkitPluginManager implements PluginManager {
 
     @Override
     public @NotNull Plugin[] getPlugins() {
-        return plugins.values().stream().distinct().toArray(Plugin[]::new);
+        return loadOrder.toArray(Plugin[]::new);
     }
 
     @Override
@@ -157,8 +183,9 @@ public class PatchBukkitPluginManager implements PluginManager {
 
     @Override
     public void disablePlugins() {
-        for (Plugin plugin : getPlugins()) {
-            disablePlugin(plugin);
+        Plugin[] plugins = getPlugins();
+        for (int i = plugins.length - 1; i >= 0; i--) {
+            disablePlugin(plugins[i]);
         }
     }
 
@@ -166,6 +193,7 @@ public class PatchBukkitPluginManager implements PluginManager {
     public void clearPlugins() {
         disablePlugins();
         plugins.clear();
+        loadOrder.clear();
     }
 
     @Override
@@ -361,7 +389,9 @@ public class PatchBukkitPluginManager implements PluginManager {
 
     @Override
     public void overridePermissionManager(@NotNull Plugin plugin, @Nullable PermissionManager permissionManager) {
-        this.permissionManager = permissionManager;
+        this.permissionManager = permissionManager != null
+            ? permissionManager
+            : new PatchBukkitPermissionManager(this.simplePluginManager);
     }
 
     @Override

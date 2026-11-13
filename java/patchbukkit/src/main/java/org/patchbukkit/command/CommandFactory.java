@@ -19,7 +19,7 @@ public class CommandFactory {
     public static PluginCommand create(String name, String pluginName) {
         try {
             Plugin plugin = null;
-            if (org.bukkit.Bukkit.getPluginManager() instanceof org.patchbukkit.PatchBukkitPluginManager pm) {
+            if (org.patchbukkit.PatchBukkitPluginManager.unwrap(org.bukkit.Bukkit.getPluginManager()) instanceof org.patchbukkit.PatchBukkitPluginManager pm) {
                 plugin = pm.getPlugin(pluginName);
                 if (plugin == null) {
                     for (Plugin p : pm.getPlugins()) {
