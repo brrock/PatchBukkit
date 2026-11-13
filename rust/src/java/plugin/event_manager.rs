@@ -7,7 +7,7 @@ use pumpkin::{entity::player::Player, server::Server};
 
 use crate::{
     events::handler::JvmEventPayload,
-    proto::patchbukkit::events::FireEventResponse,
+    proto::patchbukkit::events::{FireEventResponse, event::Data},
 };
 
 pub struct EventManager;

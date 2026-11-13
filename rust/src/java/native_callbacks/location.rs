@@ -1,6 +1,4 @@
-use std::sync::Arc;
 
-use pumpkin::entity::EntityBase;
 use crate::{
     java::native_callbacks::CALLBACK_CONTEXT,
     proto::patchbukkit::common::{Location, Uuid, Vec3, World},
