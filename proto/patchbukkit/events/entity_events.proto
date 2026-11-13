@@ -195,6 +195,10 @@ message EntityPickupItemEvent {
   int32 entity_id = 1;
   string item_name = 2;
   uint32 count = 3;
+  // The picker, resolved on the server when the event is built.
+  patchbukkit.common.UUID entity_uuid = 4;
+  // Registry name of the picker's type, e.g. "piglin" or "player".
+  string entity_type = 5;
 }
 
 message EntityPlaceEvent {

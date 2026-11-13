@@ -4,6 +4,7 @@ package patchbukkit.world;
 
 import "google/protobuf/empty.proto";
 import "patchbukkit/common/types.proto";
+import "patchbukkit/itemstack.proto";
 
 option java_multiple_files = true;
 option java_package = "patchbukkit.world";
@@ -173,6 +174,10 @@ message SpawnWorldEntityRequest {
   double z = 5;
   float yaw = 6;
   float pitch = 7;
+  // For ITEM: the stack the dropped item carries.
+  optional patchbukkit.itemstack.ItemStack item = 8;
+  // For EXPERIENCE_ORB: the experience the orb holds.
+  optional int32 experience = 9;
 }
 
 message SpawnWorldEntityResponse {
@@ -246,4 +251,32 @@ message SignLinesResponse {
   repeated string lines = 2;
   bool glowing = 3;
   int32 color = 4;
+}
+
+message ChunkRequest {
+  patchbukkit.common.UUID world_uuid = 1;
+  int32 x = 2;
+  int32 z = 3;
+  // For LoadChunk: generate the chunk if it does not exist on disk yet.
+  bool generate = 4;
+  // For GetChunkState: look in the region files when the chunk is not loaded.
+  bool check_disk = 5;
+}
+
+message ChunkStateResponse {
+  bool loaded = 1;
+  bool generated = 2;
+}
+
+message GetBlockDropsRequest {
+  patchbukkit.common.UUID world_uuid = 1;
+  int32 x = 2;
+  int32 y = 3;
+  int32 z = 4;
+  // Unset means "no tool": drops are rolled as if the block broke on its own.
+  patchbukkit.itemstack.ItemStack tool = 5;
+}
+
+message GetBlockDropsResponse {
+  repeated patchbukkit.itemstack.ItemStack drops = 1;
 }

@@ -30,8 +30,16 @@ pub fn ffi_native_bridge_call_event_impl(request: CallEventRequest) -> Option<Ca
 }
 
 pub fn ffi_native_bridge_register_event_impl(request: RegisterEventRequest) -> Option<()> {
+    // Pumpkin never fires its CreatureSpawnEvent; living spawns arrive as EntitySpawnEvent and the
+    // Java side turns them into Bukkit CreatureSpawnEvents, so both listen to the same event.
+    let event_type = match request.event_type.as_str() {
+        "org.bukkit.event.entity.CreatureSpawnEvent" => {
+            "org.bukkit.event.entity.EntitySpawnEvent".to_string()
+        }
+        other => other.to_string(),
+    };
     let mut registered = REGISTERED_EVENTS.lock().unwrap();
-    if !registered.insert((request.plugin_name.clone(), request.event_type.clone())) {
+    if !registered.insert((request.plugin_name.clone(), event_type.clone())) {
         return Some(());
     }
 
@@ -48,7 +56,7 @@ pub fn ffi_native_bridge_register_event_impl(request: RegisterEventRequest) -> O
         _ => EventPriority::Normal,
     };
 
-    match request.event_type.as_str() {
+    match event_type.as_str() {
         "org.bukkit.event.world.AsyncStructureGenerateEvent" => {
             plugin_context
                 .register_event::<
@@ -3002,6 +3010,22 @@ pub fn ffi_native_bridge_register_event_impl(request: RegisterEventRequest) -> O
                 .register_event::<
                     pumpkin::plugin::entity::entity_mount::EntityMountEvent,
                     PatchBukkitEventHandler<pumpkin::plugin::entity::entity_mount::EntityMountEvent>,
+                >(
+                    Arc::new(PatchBukkitEventHandler::new(
+                        request.plugin_name.clone(),
+                        command_tx.clone(),
+                    )),
+                    pumpkin_priority,
+                    request.blocking,
+                );
+        }
+        // Not a Bukkit event: registered by the Messenger so incoming plugin messages
+        // reach PluginMessageListeners.
+        "patchbukkit:plugin_message" => {
+            plugin_context
+                .register_event::<
+                    pumpkin::plugin::player::player_custom_payload::PlayerCustomPayloadEvent,
+                    PatchBukkitEventHandler<pumpkin::plugin::player::player_custom_payload::PlayerCustomPayloadEvent>,
                 >(
                     Arc::new(PatchBukkitEventHandler::new(
                         request.plugin_name.clone(),

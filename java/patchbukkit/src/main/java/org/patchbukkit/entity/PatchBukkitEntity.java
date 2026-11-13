@@ -122,7 +122,15 @@ public class PatchBukkitEntity implements Entity {
     private EntityType entityType = EntityType.UNKNOWN;
 
     public static Entity create(UUID uuid, EntityType type, Location loc, int entityId) {
-        PatchBukkitEntity entity = new PatchBukkitEntity(uuid, type != null ? type.name() : "entity", entityId);
+        PatchBukkitEntity entity;
+        if (type == EntityType.ITEM) {
+            entity = new PatchBukkitItem(uuid, entityId);
+        } else if (type == EntityType.EXPERIENCE_ORB) {
+            entity = new PatchBukkitExperienceOrb(uuid);
+        } else {
+            PatchBukkitEntity typed = TypedEntityClasses.create(type, uuid, entityId);
+            entity = typed != null ? typed : new PatchBukkitEntity(uuid, type != null ? type.name() : "entity", entityId);
+        }
         entity.entityType = type != null ? type : EntityType.UNKNOWN;
         entity.cachedLocation = loc != null ? loc.clone() : new Location(null, 0, 0, 0);
         return entity;
@@ -134,6 +142,7 @@ public class PatchBukkitEntity implements Entity {
 
     private static final java.util.concurrent.atomic.AtomicInteger NEXT_ENTITY_ID = new java.util.concurrent.atomic.AtomicInteger(1);
     protected int entityId;
+    private int placeholderEntityId;
 
     public PatchBukkitEntity(
         UUID uuid,
@@ -512,10 +521,15 @@ public class PatchBukkitEntity implements Entity {
                 }
             } catch (Throwable t) { BridgeUtils.logBridgeFailure("getEntityId", t); }
         }
-        if (this.entityId <= 0) {
-            this.entityId = NEXT_ENTITY_ID.incrementAndGet();
+        if (this.entityId > 0) {
+            return this.entityId;
         }
-        return this.entityId;
+        // Not in the world yet (spawns are applied on the next server step): hand out a stable
+        // placeholder but keep asking the server, so the real id replaces it once known.
+        if (this.placeholderEntityId <= 0) {
+            this.placeholderEntityId = NEXT_ENTITY_ID.incrementAndGet();
+        }
+        return this.placeholderEntityId;
     }
 
     @Override
@@ -607,7 +621,15 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public void remove() {
+        World world = this.getWorld();
         NativeBridgeFfi.removeEntity(BridgeUtils.convertUuid(this.uuid));
+        if (world instanceof org.patchbukkit.world.PatchBukkitWorld pbWorld) {
+            pbWorld.unregisterEntity(this.uuid);
+        }
+        if (world != null && org.bukkit.Bukkit.getServer() != null) {
+            org.bukkit.Bukkit.getPluginManager().callEvent(
+                new com.destroystokyo.paper.event.entity.EntityRemoveFromWorldEvent(this, world));
+        }
     }
 
     @Override
@@ -629,15 +651,16 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public boolean isPersistent() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'isPersistent'");
+        return this.persistent;
     }
 
     @Override
     public void setPersistent(boolean persistent) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'setPersistent'");
+        this.persistent = persistent;
     }
+
+    // Bukkit entities persist with their chunk unless a plugin says otherwise.
+    private volatile boolean persistent = true;
 
     @Override
     public @Nullable Entity getPassenger() {
@@ -952,8 +975,33 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public @NotNull SpawnCategory getSpawnCategory() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getSpawnCategory'");
+        return spawnCategoryOf(this.getType());
+    }
+
+    /** The vanilla MobCategory of the type, as Bukkit's SpawnCategory (CraftSpawnCategory). */
+    public static @NotNull SpawnCategory spawnCategoryOf(EntityType type) {
+        if (type == null || type.getKey() == null) {
+            return SpawnCategory.MISC;
+        }
+        try {
+            var nmsType = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE
+                .getOptional(net.minecraft.resources.Identifier.parse(type.getKey().toString()));
+            if (nmsType.isEmpty()) {
+                return SpawnCategory.MISC;
+            }
+            return switch (nmsType.get().getCategory()) {
+                case MONSTER -> SpawnCategory.MONSTER;
+                case CREATURE -> SpawnCategory.ANIMAL;
+                case AMBIENT -> SpawnCategory.AMBIENT;
+                case AXOLOTLS -> SpawnCategory.AXOLOTL;
+                case UNDERGROUND_WATER_CREATURE -> SpawnCategory.WATER_UNDERGROUND_CREATURE;
+                case WATER_CREATURE -> SpawnCategory.WATER_ANIMAL;
+                case WATER_AMBIENT -> SpawnCategory.WATER_AMBIENT;
+                default -> SpawnCategory.MISC;
+            };
+        } catch (Throwable t) {
+            return SpawnCategory.MISC;
+        }
     }
 
     @Override

@@ -14,6 +14,7 @@ import java.util.logging.Logger;
 public final class BytecodeTransformer {
 
     private static final Logger LOGGER = Logger.getLogger("BytecodeTransformer");
+    private static final String CRAFT_ITEM_STACK = "org/bukkit/craftbukkit/inventory/CraftItemStack";
 
     private static Remapper createRemapper(String currentClassName) {
         final boolean isCraftBukkitReflection = currentClassName != null && currentClassName.contains("CraftBukkitReflection");
@@ -52,6 +53,15 @@ public final class BytecodeTransformer {
                 // Remap CraftHumanEntity -> PatchBukkitHumanEntity, the base of every Player we hand out
                 if (internalName.equals("org/bukkit/craftbukkit/entity/CraftHumanEntity")) {
                     return "org/patchbukkit/entity/PatchBukkitHumanEntity";
+                }
+
+                // Remap CraftBlock / CraftWorld to the PatchBukkit types plugins actually receive;
+                // those expose the CraftBlock/CraftWorld accessors plugins use.
+                if (internalName.equals("org/bukkit/craftbukkit/block/CraftBlock")) {
+                    return "org/patchbukkit/world/PatchBukkitBlock";
+                }
+                if (internalName.equals("org/bukkit/craftbukkit/CraftWorld")) {
+                    return "org/patchbukkit/world/PatchBukkitWorld";
                 }
 
                 // Remap CraftScheduler -> BukkitScheduler
@@ -121,6 +131,23 @@ public final class BytecodeTransformer {
             Remapper remapper = createRemapper(className);
             ClassVisitor cv = new PluginReflectionVisitor(writer);
             cv = new ClassRemapper(cv, remapper);
+
+            cv = new ClassVisitor(Opcodes.ASM9, cv) {
+                @Override
+                public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+                    return new MethodVisitor(Opcodes.ASM9, super.visitMethod(access, name, descriptor, signature, exceptions)) {
+                        @Override
+                        public void visitTypeInsn(int opcode, String type) {
+                            // Inventories hand out plain Bukkit stacks; convert before CraftItemStack casts.
+                            if (opcode == Opcodes.CHECKCAST && CRAFT_ITEM_STACK.equals(type)) {
+                                super.visitMethodInsn(Opcodes.INVOKESTATIC, "org/patchbukkit/inventory/CraftItemStack",
+                                    "toCraftItemStack", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                            }
+                            super.visitTypeInsn(opcode, type);
+                        }
+                    };
+                }
+            };
 
             if (className != null && className.contains("CraftBukkitReflection")) {
                 cv = new ClassVisitor(Opcodes.ASM9, cv) {

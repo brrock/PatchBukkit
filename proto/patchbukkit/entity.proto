@@ -243,6 +243,12 @@ message GetEntityUuidResponse {
   patchbukkit.common.UUID uuid = 1;
 }
 
+message SendPluginMessageRequest {
+  patchbukkit.common.UUID player_uuid = 1;
+  string channel = 2;
+  bytes data = 3;
+}
+
 message EntityStateResponse {
   bool found = 1;
   int32 fire_ticks = 2;

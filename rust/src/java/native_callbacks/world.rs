@@ -1,4 +1,4 @@
-use pumpkin_util::math::vector3::Vector3;
+use pumpkin_util::math::{vector2::Vector2, vector3::Vector3};
 use std::sync::Arc;
 
 use crate::{
@@ -6,7 +6,7 @@ use crate::{
     proto::patchbukkit::{
         common::{EmptyRequest, Uuid as ProtoUuid},
         world::{
-            ChunkCoordProto, CreateWorldExplosionRequest, EntitySummaryProto, GetBlockDataRequest,
+            ChunkCoordProto, ChunkRequest, ChunkStateResponse, GetBlockDropsRequest, GetBlockDropsResponse, CreateWorldExplosionRequest, EntitySummaryProto, GetBlockDataRequest,
             GetBlockDataResponse, GetForceLoadedChunksRequest, GetForceLoadedChunksResponse,
             GetWorldBorderRequest, GetWorldEntitiesRequest, GetWorldEntitiesResponse,
             GetWorldGamerulesRequest, GetWorldGamerulesResponse, GetWorldInfoRequest,
@@ -464,35 +464,137 @@ pub fn ffi_native_bridge_spawn_world_entity_impl(
         .or_else(|| worlds.first().cloned())?;
 
     let new_uuid = uuid::Uuid::new_v4();
-    let pos = Vector3::new(request.x, request.y, request.z);
 
-    let entity_type: &'static pumpkin_data::entity::EntityType =
-        match request.entity_type.to_uppercase().as_str() {
-            "LIGHTNING_BOLT" | "LIGHTNING" => &pumpkin_data::entity::EntityType::LIGHTNING_BOLT,
-            "ITEM" | "DROPPED_ITEM" => &pumpkin_data::entity::EntityType::ITEM,
-            "ZOMBIE" => &pumpkin_data::entity::EntityType::ZOMBIE,
-            "SKELETON" => &pumpkin_data::entity::EntityType::SKELETON,
-            "CREEPER" => &pumpkin_data::entity::EntityType::CREEPER,
-            "COW" => &pumpkin_data::entity::EntityType::COW,
-            "PIG" => &pumpkin_data::entity::EntityType::PIG,
-            "SHEEP" => &pumpkin_data::entity::EntityType::SHEEP,
-            _ => &pumpkin_data::entity::EntityType::PIG,
-        };
-    let entity = pumpkin::entity::r#type::from_type(entity_type, pos, &world, new_uuid);
-    let entity_id = entity.get_entity().entity_id;
+    match request.entity_type.to_uppercase().as_str() {
+        "EXPERIENCE_ORB" => {
+            let amount = u32::try_from(request.experience.unwrap_or(0)).unwrap_or(0);
+            // The server's /summon makes 1-point orbs and reads no amount from NBT, so summon one
+            // per point (capped). Orbs built from this plugin's Pumpkin copy are never picked up.
+            for i in 0..amount.min(MAX_SUMMONED_ORBS) {
+                let id = if i == 0 { new_uuid } else { uuid::Uuid::new_v4() };
+                summon(
+                    ctx,
+                    world.clone(),
+                    format!(
+                        "summon minecraft:experience_orb {} {} {} {{UUID:{}}}",
+                        request.x,
+                        request.y,
+                        request.z,
+                        uuid_int_array(id)
+                    ),
+                );
+            }
+            return Some(SpawnWorldEntityResponse {
+                entity_uuid: Some(ProtoUuid {
+                    value: new_uuid.to_string(),
+                }),
+                success: amount > 0,
+                entity_id: 0,
+            });
+        }
+        "ITEM" | "DROPPED_ITEM" if request.item.is_some() => {
+            // The item entity must be the server's own: an ItemEntity built from this plugin's
+            // copy of Pumpkin ticks with the plugin's component TypeIds and panics on a server
+            // stack (and the reverse for a plugin stack). Summon it through the server's command.
+            let item = request.item.as_ref()?;
+            let key = item.r#type.strip_prefix("minecraft:").unwrap_or(&item.r#type);
+            let safe = !key.is_empty()
+                && key.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+            if !safe || key == "air" || item.amount == 0 {
+                return Some(SpawnWorldEntityResponse {
+                    entity_uuid: None,
+                    success: false,
+                    entity_id: 0,
+                });
+            }
+            // Components the proto carries (enchantments), in the item NBT the server reads.
+            let mut enchants: Vec<String> = item
+                .enchantments
+                .iter()
+                .filter(|(name, level)| {
+                    **level > 0
+                        && !name.is_empty()
+                        && name
+                            .chars()
+                            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == ':')
+                })
+                .map(|(name, level)| {
+                    let name = if name.contains(':') { name.clone() } else { format!("minecraft:{name}") };
+                    format!("\"{name}\":{level}")
+                })
+                .collect();
+            enchants.sort();
+            let components = if enchants.is_empty() {
+                String::new()
+            } else {
+                format!(",components:{{\"minecraft:enchantments\":{{{}}}}}", enchants.join(","))
+            };
+            let command = format!(
+                "summon minecraft:item {} {} {} {{UUID:{},Item:{{id:\"minecraft:{key}\",count:{}{components}}}}}",
+                request.x,
+                request.y,
+                request.z,
+                uuid_int_array(new_uuid),
+                item.amount.min(99)
+            );
+            summon(ctx, world.clone(), command);
+            return Some(SpawnWorldEntityResponse {
+                entity_uuid: Some(ProtoUuid {
+                    value: new_uuid.to_string(),
+                }),
+                success: true,
+                entity_id: 0,
+            });
+        }
+        _ => {}
+    }
 
-    let w = world.clone();
-    ctx.runtime.spawn(async move {
-        w.spawn_entity(entity);
-    });
+    // Summon through the server's own command so the entity is built and ticked by the server's
+    // code; one built from this plugin's copy of Pumpkin breaks on component TypeIds.
+    let name = match request.entity_type.to_lowercase().as_str() {
+        "lightning" => "lightning_bolt".to_string(),
+        "dropped_item" => "item".to_string(),
+        other => other.strip_prefix("minecraft:").unwrap_or(other).to_string(),
+    };
+    if name.is_empty() || !name.chars().all(|c| c.is_ascii_lowercase() || c == '_') {
+        return Some(SpawnWorldEntityResponse {
+            entity_uuid: None,
+            success: false,
+            entity_id: 0,
+        });
+    }
+    let command = format!(
+        "summon minecraft:{name} {} {} {} {{UUID:{},Rotation:[{}f,{}f]}}",
+        request.x,
+        request.y,
+        request.z,
+        uuid_int_array(new_uuid),
+        request.yaw,
+        request.pitch
+    );
+    summon(ctx, world, command);
 
     Some(SpawnWorldEntityResponse {
         entity_uuid: Some(ProtoUuid {
             value: new_uuid.to_string(),
         }),
         success: true,
-        entity_id,
+        entity_id: 0,
     })
+}
+
+/// Runs a /summon line as a silent console source in the given world, off the caller's thread.
+fn summon(ctx: &'static crate::java::native_callbacks::CallbackContext, world: Arc<pumpkin::world::World>, command: String) {
+    let server = ctx.plugin_context.server.clone();
+    ctx.runtime.spawn(async move {
+        let mut source = pumpkin::command::CommandSender::Console.into_source(&server);
+        source.silent = true;
+        source.world = Some(world);
+        tracing::debug!("PatchBukkit summon: {command}");
+        if let Err(e) = server.command_dispatcher.load().execute_input(&command, &source) {
+            tracing::warn!("PatchBukkit: summon failed ({command}): {e:?}");
+        }
+    });
 }
 
 pub fn ffi_native_bridge_create_world_explosion_impl(
@@ -537,13 +639,26 @@ pub fn ffi_native_bridge_play_world_sound_impl(request: PlayWorldSoundRequest) -
     let pos = Vector3::new(request.x, request.y, request.z);
     let sound_name = request.sound;
     if let Some(sound) = pumpkin_data::sound::Sound::from_name(&sound_name) {
-        world.play_sound_raw(
-            sound as u16,
-            pumpkin_data::sound::SoundCategory::Master,
-            &pos,
-            request.volume,
-            request.pitch,
-        );
+        // Send to each player in earshot. World::play_sound_raw groups recipients in a map keyed
+        // by protocol version, which corrupted memory when run from this plugin's copy of it.
+        let audible_blocks = f64::from(request.volume.max(1.0)) * 16.0;
+        let seed: i64 = rand::random();
+        for player in world.players.load().iter() {
+            let p = pumpkin::entity::EntityBase::get_entity(player.as_ref()).pos.load();
+            if (p.x - pos.x).abs() <= audible_blocks
+                && (p.y - pos.y).abs() <= audible_blocks
+                && (p.z - pos.z).abs() <= audible_blocks
+            {
+                player.play_sound(
+                    sound as u16,
+                    pumpkin_data::sound::SoundCategory::Master,
+                    &pos,
+                    request.volume,
+                    request.pitch,
+                    seed,
+                );
+            }
+        }
     }
 
     Some(())
@@ -619,4 +734,152 @@ pub fn ffi_native_bridge_save_world_impl(request: SaveWorldRequest) -> Option<()
     });
 
     Some(())
+}
+
+/// How long a Java thread may wait for Pumpkin to load or generate one chunk.
+const CHUNK_LOAD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn find_world_exact(world_uuid: Option<&ProtoUuid>) -> Option<Arc<pumpkin::world::World>> {
+    let ctx = CALLBACK_CONTEXT.get()?;
+    let world_uuid = uuid::Uuid::parse_str(&world_uuid?.value).ok()?;
+    ctx.plugin_context
+        .server
+        .worlds
+        .load_full()
+        .iter()
+        .find(|w| w.uuid == world_uuid)
+        .cloned()
+}
+
+/// Runs `fut` on the PatchBukkit runtime and blocks the calling (Java) thread until it
+/// finishes. A std channel is used because the JVM worker thread is itself inside a
+/// `block_on`, where tokio's own blocking helpers would panic.
+fn block_on_runtime<T: Send + 'static>(
+    fut: impl std::future::Future<Output = T> + Send + 'static,
+    timeout: std::time::Duration,
+) -> Option<T> {
+    let ctx = CALLBACK_CONTEXT.get()?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    ctx.runtime.spawn(async move {
+        let _ = tx.send(fut.await);
+    });
+    rx.recv_timeout(timeout).ok()
+}
+
+/// Whether a full chunk exists in the region files of `world`.
+async fn chunk_exists_on_disk(world: &pumpkin::world::World, pos: Vector2<i32>) -> bool {
+    use pumpkin_world::chunk::io::{FileIO, LoadedData};
+    let level = &world.level;
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    let positions = [pos];
+    let fetch = level.chunk_saver.fetch_chunks(&level.level_folder, &positions, tx);
+    let (_, data) = tokio::join!(fetch, rx.recv());
+    matches!(data, Some(LoadedData::Loaded(_)))
+}
+
+pub fn ffi_native_bridge_get_chunk_state_impl(request: ChunkRequest) -> Option<ChunkStateResponse> {
+    let world = find_world_exact(request.world_uuid.as_ref())?;
+    let pos = Vector2::new(request.x, request.z);
+    if world.level.is_chunk_loaded(&pos) {
+        return Some(ChunkStateResponse {
+            loaded: true,
+            generated: true,
+        });
+    }
+    if !request.check_disk {
+        return Some(ChunkStateResponse {
+            loaded: false,
+            generated: false,
+        });
+    }
+    let generated = block_on_runtime(
+        async move { chunk_exists_on_disk(&world, pos).await },
+        CHUNK_LOAD_TIMEOUT,
+    )?;
+    Some(ChunkStateResponse {
+        loaded: false,
+        generated,
+    })
+}
+
+/// Loads a chunk through Pumpkin's chunk system, generating it when `generate` is set and
+/// it is not on disk yet. Blocks the calling Java thread until the chunk is available.
+pub fn ffi_native_bridge_load_chunk_impl(request: ChunkRequest) -> Option<ChunkStateResponse> {
+    let world = find_world_exact(request.world_uuid.as_ref())?;
+    let pos = Vector2::new(request.x, request.z);
+    let generate = request.generate;
+    block_on_runtime(
+        async move {
+            if !generate
+                && !world.level.is_chunk_loaded(&pos)
+                && !chunk_exists_on_disk(&world, pos).await
+            {
+                return ChunkStateResponse {
+                    loaded: false,
+                    generated: false,
+                };
+            }
+            world.level.get_or_fetch_chunk(pos, |_| ()).await;
+            ChunkStateResponse {
+                loaded: world.level.is_chunk_loaded(&pos),
+                generated: true,
+            }
+        },
+        CHUNK_LOAD_TIMEOUT,
+    )
+}
+
+/// Rolls the block's loot table like Paper's CraftBlock#getDrops: with a tool that cannot
+/// harvest the block there are no drops.
+pub fn ffi_native_bridge_get_block_drops_impl(
+    request: GetBlockDropsRequest,
+) -> Option<GetBlockDropsResponse> {
+    use pumpkin_data::item_stack::ItemStack;
+    let world = find_world_exact(request.world_uuid.as_ref())?;
+    let pos = pumpkin_util::math::position::BlockPos::new(request.x, request.y, request.z);
+    let state = world.get_block_state(&pos);
+    let block = pumpkin_data::Block::from_state_id(state.id);
+
+    let tool = request.tool.as_ref().and_then(|tool| {
+        let item = pumpkin_data::item::Item::from_registry_key(&tool.r#type)?;
+        Some(ItemStack::new(tool.amount.clamp(1, 99) as u8, item))
+    });
+    let empty = Some(GetBlockDropsResponse { drops: Vec::new() });
+    if let Some(tool) = &tool
+        && state.tool_required()
+        && !tool.is_correct_for_drops(block)
+    {
+        return empty;
+    }
+    let Some(loot_table) = world.get_loot_table(&format!("minecraft:blocks/{}", block.name)) else {
+        return empty;
+    };
+    let params = pumpkin::world::loot::LootContextParameters {
+        block_state: Some(state),
+        tool,
+        position: Some(pos.to_f64()),
+        ..Default::default()
+    };
+    let drops = pumpkin::world::loot::generate_loot_from_handle(&loot_table, rand::random(), &params)
+        .into_iter()
+        .filter(|stack| stack.item_count > 0)
+        .map(|stack| crate::proto::patchbukkit::itemstack::ItemStack {
+            r#type: format!("minecraft:{}", stack.item.registry_key),
+            amount: u32::from(stack.item_count),
+            ..Default::default()
+        })
+        .collect();
+    Some(GetBlockDropsResponse { drops })
+}
+
+/// Upper bound on orbs summoned for one experience drop.
+const MAX_SUMMONED_ORBS: u32 = 256;
+
+/// Formats a UUID as the SNBT int array vanilla uses for an entity's `UUID` tag.
+fn uuid_int_array(uuid: uuid::Uuid) -> String {
+    let v = uuid.as_u128();
+    let parts: Vec<String> = (0..4)
+        .map(|i| ((v >> (96 - 32 * i)) as u32 as i32).to_string())
+        .collect();
+    format!("[I;{}]", parts.join(","))
 }

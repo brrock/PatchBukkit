@@ -5523,10 +5523,32 @@ impl PatchBukkitEvent for pumpkin::plugin::entity::entity_pickup_item::EntityPic
     fn to_payload(&self, server: Arc<Server>) -> JvmEventPayload {
         JvmEventPayload {
             event: Event {
-                data: Some(Data::EntityPickupItem(EntityPickupItemEvent {
-                    entity_id: self.entity_id,
-                    item_name: self.item_name.clone(),
-                    count: u32::from(self.count),
+                data: Some(Data::EntityPickupItem({
+                    // Plain data only: the picker's uuid and type name.
+                    let mut picker_uuid = None;
+                    let mut picker_type = String::new();
+                    for world in server.worlds.load().iter() {
+                        if let Some(player) = world.get_player_by_id(self.entity_id) {
+                            picker_uuid = Some(player.gameprofile.id);
+                            picker_type = "player".to_string();
+                            break;
+                        }
+                        if let Some(entity) = world.get_entity_by_id(self.entity_id) {
+                            let base = entity.get_entity();
+                            picker_uuid = Some(base.entity_uuid);
+                            picker_type = base.entity_type.resource_name.to_string();
+                            break;
+                        }
+                    }
+                    EntityPickupItemEvent {
+                        entity_id: self.entity_id,
+                        item_name: self.item_name.clone(),
+                        count: u32::from(self.count),
+                        entity_uuid: picker_uuid.map(|u| Uuid {
+                            value: u.to_string(),
+                        }),
+                        entity_type: picker_type,
+                    }
                 })),
             },
             context: EventContext {
@@ -5771,11 +5793,19 @@ impl PatchBukkitEvent for pumpkin::plugin::entity::entity_spawn::EntitySpawnEven
             event: Event {
                 data: Some(Data::EntitySpawn(EntitySpawnEvent {
                     entity_id: self.entity_id,
-                    entity_type: self.entity_type.clone(),
+                    // Pumpkin sends the numeric registry id; Bukkit wants the name.
+                    entity_type: self
+                        .entity_type
+                        .parse::<u16>()
+                        .ok()
+                        .and_then(pumpkin_data::entity::EntityType::from_raw)
+                        .map_or_else(|| self.entity_type.clone(), |t| t.resource_name.to_string()),
                     pos_x: self.position.x,
                     pos_y: self.position.y,
                     pos_z: self.position.z,
-                    world_uuid: None,
+                    world_uuid: Some(crate::proto::patchbukkit::common::Uuid {
+                        value: self.world.uuid.to_string(),
+                    }),
                 })),
             },
             context: EventContext {
@@ -6884,5 +6914,28 @@ where
                 }
             }
         })
+    }
+}
+
+/// Pumpkin tick handler that asks the JVM worker to run the scheduler's sync tasks due this tick.
+pub struct SyncTaskTickHandler {
+    command_tx: mpsc::Sender<JvmCommand>,
+}
+
+impl SyncTaskTickHandler {
+    #[must_use]
+    pub const fn new(command_tx: mpsc::Sender<JvmCommand>) -> Self {
+        Self { command_tx }
+    }
+}
+
+impl<E> EventHandler<E> for SyncTaskTickHandler
+where
+    E: Payload + 'static,
+{
+    fn handle<'a>(&'a self, _server: &'a Arc<Server>, _event: &'a E) -> BoxFuture<'a, ()> {
+        // try_send never waits on the tick; a full queue defers the drain to the next tick.
+        let _ = self.command_tx.try_send(JvmCommand::RunSyncTasks);
+        Box::pin(async {})
     }
 }

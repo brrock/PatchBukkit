@@ -12,7 +12,7 @@ use crate::{
             GetExperienceResponse, GetFoodLevelResponse, GetPlayerPoseStateResponse,
             OpenPlayerInventoryRequest,
             KickPlayerRequest, PlayerConnectionInfoResponse, SendActionBarRequest,
-            SendBlockChangeRequest, SendGameEventRequest, SendResourcePackRequest,
+            SendBlockChangeRequest, SendGameEventRequest, SendPluginMessageRequest, SendResourcePackRequest,
             SendTitleRequest, SetCompassTargetRequest, SetCooldownRequest, SetDisplayNameRequest,
             SetEntityHealthRequest, SetEntityVelocityRequest, SetExhaustionRequest,
             SetExperienceRequest, SetFoodLevelRequest, SetOpRequest,
@@ -904,4 +904,18 @@ pub fn ffi_native_bridge_player_chat_impl(
         }
     });
     Some(())
+}
+
+pub fn ffi_native_bridge_send_plugin_message_impl(request: SendPluginMessageRequest) -> Option<()> {
+    let ctx = CALLBACK_CONTEXT.get()?;
+    with_player(request.player_uuid.as_ref(), |player| {
+        ctx.runtime.spawn(async move {
+            player
+                .send_client_packet(&pumpkin_protocol::java::client::play::CCustomPayload::new(
+                    &request.channel,
+                    &request.data,
+                ))
+                .await;
+        });
+    })
 }

@@ -56,13 +56,13 @@ logs/
 crash-reports/
 
 # Runtime and Test directories / artifacts
-patchbukkit/
+/patchbukkit/
 patchbukkit-plugins/
 patchbukkit-libs/
 run/
 **/run/
-world/
-world_nether/
+/world/
+/world_nether/
 world_the_end/
 *.local.nbt
 

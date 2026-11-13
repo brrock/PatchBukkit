@@ -221,11 +221,21 @@ public class PatchBukkitRegionAccessor implements RegionAccessor {
         @NotNull Location location,
         @NotNull Class<T> clazz
     ) {
-        EntityType type = EntityType.PIG;
+        // Prefer the type whose class is exactly the one asked for (Zombie, not Drowned).
+        EntityType type = null;
         for (EntityType et : EntityType.values()) {
-            if (et.getEntityClass() != null && clazz.isAssignableFrom(et.getEntityClass())) {
+            if (et.getEntityClass() == clazz) {
                 type = et;
                 break;
+            }
+        }
+        if (type == null) {
+            type = EntityType.PIG;
+            for (EntityType et : EntityType.values()) {
+                if (et.getEntityClass() != null && clazz.isAssignableFrom(et.getEntityClass())) {
+                    type = et;
+                    break;
+                }
             }
         }
         return (T) PatchBukkitEntity.create(UUID.randomUUID(), type, location);
@@ -239,8 +249,36 @@ public class PatchBukkitRegionAccessor implements RegionAccessor {
         CreatureSpawnEvent.@NotNull SpawnReason reason
     ) throws IllegalArgumentException {
         T entity = createEntity(location, clazz);
+        if (!(entity instanceof org.patchbukkit.entity.PatchBukkitExperienceOrb)
+            && !(entity instanceof org.bukkit.entity.Player)) {
+            // Put the entity in the world; the server answers with its uuid and id.
+            Entity spawned = spawnEntity(location, entity.getType(), true);
+            if (clazz.isInstance(spawned)) {
+                entity = clazz.cast(spawned);
+            }
+        }
         if (function != null) {
             function.accept(entity);
+        }
+        if (entity instanceof org.patchbukkit.entity.PatchBukkitExperienceOrb orb) {
+            // The amount is usually set right after spawn() returns, so send the orb afterwards.
+            UUID worldUuid = (this instanceof PatchBukkitWorld w) ? w.getUID() : UUID.randomUUID();
+            Location at = location.clone();
+            org.patchbukkit.scheduler.PatchBukkitScheduler.runOnNextDrain(() -> {
+                if (orb.getExperience() <= 0) {
+                    return;
+                }
+                try {
+                    NativeBridgeFfi.spawnWorldEntity(SpawnWorldEntityRequest.newBuilder()
+                        .setWorldUuid(BridgeUtils.convertUuid(worldUuid))
+                        .setEntityType("EXPERIENCE_ORB")
+                        .setX(at.getX())
+                        .setY(at.getY())
+                        .setZ(at.getZ())
+                        .setExperience(orb.getExperience())
+                        .build());
+                } catch (Throwable ignored) {}
+            });
         }
         return addEntity(entity);
     }

@@ -2261,17 +2261,7 @@ public class PatchBukkitServer implements Server {
         if (registry == null || tag == null || clazz == null) {
             return null;
         }
-        try {
-            for (java.lang.reflect.Field field : Tag.class.getFields()) {
-                if (Tag.class.isAssignableFrom(field.getType())) {
-                    Tag<?> val = (Tag<?>) field.get(null);
-                    if (val != null && val.getKey().equals(tag)) {
-                        return (Tag<T>) val;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
-        return new org.patchbukkit.tag.PatchBukkitTag<>(tag);
+        return org.patchbukkit.tag.PatchBukkitTags.getTag(registry, tag, clazz);
     }
 
     @Override
@@ -2279,18 +2269,7 @@ public class PatchBukkitServer implements Server {
         @NotNull String registry,
         @NotNull Class<T> clazz
     ) {
-        List<Tag<T>> result = new ArrayList<>();
-        try {
-            for (java.lang.reflect.Field field : Tag.class.getFields()) {
-                if (Tag.class.isAssignableFrom(field.getType())) {
-                    Tag<?> val = (Tag<?>) field.get(null);
-                    if (val != null) {
-                        result.add((Tag<T>) val);
-                    }
-                }
-            }
-        } catch (Throwable ignored) {}
-        return result;
+        return org.patchbukkit.tag.PatchBukkitTags.getTags(registry, clazz);
     }
 
     @Override
