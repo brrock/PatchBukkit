@@ -67,6 +67,9 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
                     }
                 }
             } catch (Throwable ignored) {}
+            try {
+                writeMeta(item, builder);
+            } catch (Throwable ignored) {}
             return builder.build();
         } catch (Throwable ignored) {
             return patchbukkit.itemstack.ItemStack.newBuilder()
@@ -74,6 +77,39 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
                 .setAmount(0)
                 .build();
         }
+    }
+
+    /** Copies the meta Pumpkin understands (name, lore, damage, unbreakable, colour) to the proto. */
+    private static void writeMeta(ItemStack item, patchbukkit.itemstack.ItemStack.Builder builder) {
+        if (!item.hasItemMeta()) return;
+        org.bukkit.inventory.meta.ItemMeta meta = item.getItemMeta();
+        if (meta == null) return;
+        if (meta.hasDisplayName()) builder.setCustomName(meta.getDisplayName());
+        if (meta.hasLore() && meta.getLore() != null) builder.addAllLore(meta.getLore());
+        if (meta instanceof org.bukkit.inventory.meta.Damageable d && d.hasDamage()) builder.setDamage(d.getDamage());
+        if (meta.isUnbreakable()) builder.setUnbreakable(true);
+        if (meta instanceof org.bukkit.inventory.meta.LeatherArmorMeta leather) {
+            org.bukkit.Color color = leather.getColor();
+            if (color != null && !color.equals(org.bukkit.Bukkit.getItemFactory().getDefaultLeatherColor())) {
+                builder.setDyedColor(color.asRGB());
+            }
+        }
+    }
+
+    private static void readMeta(patchbukkit.itemstack.ItemStack proto, ItemStack stack) {
+        boolean any = proto.hasCustomName() || proto.getLoreCount() > 0 || proto.getDamage() > 0
+            || proto.getUnbreakable() || proto.hasDyedColor();
+        if (!any) return;
+        org.bukkit.inventory.meta.ItemMeta meta = stack.getItemMeta();
+        if (meta == null) return;
+        if (proto.hasCustomName()) meta.setDisplayName(proto.getCustomName());
+        if (proto.getLoreCount() > 0) meta.setLore(new java.util.ArrayList<>(proto.getLoreList()));
+        if (proto.getDamage() > 0 && meta instanceof org.bukkit.inventory.meta.Damageable d) d.setDamage(proto.getDamage());
+        if (proto.getUnbreakable()) meta.setUnbreakable(true);
+        if (proto.hasDyedColor() && meta instanceof org.bukkit.inventory.meta.LeatherArmorMeta leather) {
+            leather.setColor(org.bukkit.Color.fromRGB(proto.getDyedColor() & 0xFFFFFF));
+        }
+        stack.setItemMeta(meta);
     }
 
     public static ItemStack fromProto(patchbukkit.itemstack.ItemStack proto) {
@@ -85,6 +121,9 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
             return new PatchBukkitItemStack(Material.AIR, 0);
         }
         PatchBukkitItemStack stack = new PatchBukkitItemStack(mat, proto.getAmount());
+        try {
+            readMeta(proto, stack);
+        } catch (Throwable ignored) {}
         if (proto.getEnchantmentsCount() > 0) {
             try {
                 var registry = org.bukkit.Registry.ENCHANTMENT;
@@ -190,7 +229,7 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
         GetPlayerInventoryResponse resp = fetchInventory();
         int selected = resp.getSelectedSlot();
         if (selected >= 0 && selected < resp.getMainInventoryCount()) {
-            return fromProto(resp.getMainInventory(selected));
+            return mirror(fromProto(resp.getMainInventory(selected)), selected);
         }
         return ItemStack.empty();
     }
@@ -204,7 +243,7 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
 
     @Override
     public ItemStack getItemInOffHand() {
-        return fromProto(fetchInventory().getOffHand());
+        return mirror(fromProto(fetchInventory().getOffHand()), 40);
     }
 
     @Override
@@ -275,6 +314,18 @@ public class PatchBukkitPlayerInventory implements PlayerInventory {
 
     @Override
     public ItemStack getItem(int index) {
+        return mirror(getItemCopy(index), index);
+    }
+
+    /** Ties a stack read from {@code slot} to that slot (see {@link PatchBukkitItemStack#mirrorTo}). */
+    private ItemStack mirror(ItemStack stack, int slot) {
+        if (stack instanceof PatchBukkitItemStack pb && !stack.getType().isAir()) {
+            pb.mirrorTo(updated -> setItem(slot, updated));
+        }
+        return stack;
+    }
+
+    private ItemStack getItemCopy(int index) {
         GetPlayerInventoryResponse resp = fetchInventory();
         if (index >= 0 && index < resp.getMainInventoryCount()) {
             return fromProto(resp.getMainInventory(index));

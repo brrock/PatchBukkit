@@ -10,6 +10,7 @@ use crate::{
             DamageEntityRequest, EntityHealthResponse, GetCooldownRequest, GetCooldownResponse,
             GetEntityIdResponse, GetEntityUuidRequest, GetEntityUuidResponse,
             GetExperienceResponse, GetFoodLevelResponse, GetPlayerPoseStateResponse,
+            OpenPlayerInventoryRequest,
             KickPlayerRequest, PlayerConnectionInfoResponse, SendActionBarRequest,
             SendBlockChangeRequest, SendGameEventRequest, SendResourcePackRequest,
             SendTitleRequest, SetCompassTargetRequest, SetCooldownRequest, SetDisplayNameRequest,
@@ -734,12 +735,173 @@ pub fn ffi_native_bridge_get_cooldown_impl(
 
 pub fn ffi_native_bridge_open_ender_chest_impl(request: Uuid) -> Option<()> {
     with_player(Some(&request), |player| {
-        player.open_ender_chest();
+        open_ender_chest_of(&player, &player);
     })
+}
+
+use pumpkin_inventory::screen_handler::InventoryPlayer;
+use pumpkin_inventory::slot::Slot;
+
+/// A filler slot that never accepts or gives items.
+pub struct LockedSlot {
+    inventory: std::sync::Arc<dyn pumpkin_inventory::Inventory>,
+    id: std::sync::atomic::AtomicU8,
+}
+
+impl LockedSlot {
+    pub fn new(inventory: std::sync::Arc<dyn pumpkin_inventory::Inventory>) -> Self {
+        Self { inventory, id: std::sync::atomic::AtomicU8::new(0) }
+    }
+}
+
+impl Slot for LockedSlot {
+    fn get_inventory(&self) -> std::sync::Arc<dyn pumpkin_inventory::Inventory> {
+        self.inventory.clone()
+    }
+    fn get_index(&self) -> usize {
+        0
+    }
+    fn set_id(&self, id: usize) {
+        self.id.store(id as u8, std::sync::atomic::Ordering::Relaxed);
+    }
+    fn can_insert(&self, _stack: &pumpkin_data::item_stack::ItemStack) -> bool {
+        false
+    }
+    fn can_take_items(&self, _player: &dyn InventoryPlayer) -> bool {
+        false
+    }
+    fn mark_dirty(&self) {}
+}
+
+pub fn ffi_native_bridge_open_player_inventory_impl(
+    request: OpenPlayerInventoryRequest,
+) -> Option<()> {
+    let target = with_player(request.target.as_ref(), |p| p)?;
+    with_player(request.viewer.as_ref(), |viewer| {
+        if request.ender_chest {
+            open_ender_chest_of(&viewer, &target);
+            return;
+        }
+        if viewer.gameprofile.id == target.gameprofile.id {
+            viewer.on_screen_handler_opened(&viewer.player_screen_handler);
+            return;
+        }
+        let factory = crate::java::native_callbacks::custom_inventory::PluginChestFactory {
+            inventory: target.inventory.clone(),
+            rows: 6,
+            title: pumpkin_util::text::TextComponent::text(target.gameprofile.name.clone()),
+            id: None,
+        };
+        viewer.open_handled_screen(&factory, None);
+    })
+}
+
+/// Shows `owner`'s ender chest to `viewer` through a plugin-built screen (Pumpkin's own
+/// ender chest screen code, compiled into the plugin, cannot handle server stacks).
+fn open_ender_chest_of(
+    viewer: &std::sync::Arc<pumpkin::entity::player::Player>,
+    owner: &std::sync::Arc<pumpkin::entity::player::Player>,
+) {
+    let factory = crate::java::native_callbacks::custom_inventory::PluginChestFactory {
+        inventory: owner.ender_chest_inventory().clone(),
+        rows: 3,
+        title: pumpkin_util::text::TextComponent::translate("container.enderchest", []),
+        id: None,
+    };
+    viewer.open_handled_screen(&factory, None);
 }
 
 pub fn ffi_native_bridge_update_inventory_impl(request: Uuid) -> Option<()> {
     with_player(Some(&request), |player| {
         player.on_screen_handler_opened(&player.player_screen_handler);
     })
+}
+
+pub fn ffi_native_bridge_open_workstation_impl(
+    request: crate::proto::patchbukkit::entity::OpenWorkstationRequest,
+) -> Option<crate::proto::patchbukkit::entity::OpenWorkstationResponse> {
+    let block_key = match request.kind.as_str() {
+        "WORKBENCH" | "CRAFTING" => "crafting_table",
+        "ANVIL" => "anvil",
+        "GRINDSTONE" => "grindstone",
+        "STONECUTTER" => "stonecutter",
+        "LOOM" => "loom",
+        "CARTOGRAPHY" => "cartography_table",
+        "SMITHING" => "smithing_table",
+        "ENCHANTING" => "enchanting_table",
+        _ => {
+            return Some(crate::proto::patchbukkit::entity::OpenWorkstationResponse { opened: false });
+        }
+    };
+    let server = CALLBACK_CONTEXT.get()?.plugin_context.server.clone();
+    let block = pumpkin_data::Block::from_registry_key(block_key)?;
+    // The block's behaviour lives in the server binary, so the screen it creates runs
+    // the server's own inventory code on the server's item stacks.
+    let behaviour = server.block_registry.get_pumpkin_block(block.id)?.clone();
+    with_player(request.viewer.as_ref(), |viewer| {
+        let world = viewer.living_entity.entity.world.load_full();
+        let position = viewer.living_entity.entity.block_pos.load();
+        let factory = behaviour.get_screen_handler_factory(pumpkin::block::GetScreenHandlerFactoryArgs {
+            server: &server,
+            world: &world,
+            block,
+            position: &position,
+            player: &viewer,
+        });
+        let opened = factory.is_some_and(|f| viewer.open_handled_screen(f.as_ref(), None).is_some());
+        crate::proto::patchbukkit::entity::OpenWorkstationResponse { opened }
+    })
+}
+
+/// Runs a command through Pumpkin's dispatcher, for commands Bukkit does not know
+/// (vanilla ones such as `/say`), as the given player or the console.
+pub fn ffi_native_bridge_dispatch_server_command_impl(
+    request: crate::proto::patchbukkit::entity::DispatchServerCommandRequest,
+) -> Option<()> {
+    let ctx = CALLBACK_CONTEXT.get()?;
+    let server = ctx.plugin_context.server.clone();
+    let sender = match request.player.as_ref() {
+        Some(uuid) if !uuid.value.is_empty() => {
+            pumpkin::command::CommandSender::Player(with_player(Some(uuid), |p| p)?)
+        }
+        _ => pumpkin::command::CommandSender::Console,
+    };
+    let source = sender.into_source(&server);
+    server
+        .command_dispatcher
+        .load()
+        .handle_command(&source, request.command.as_str());
+    Some(())
+}
+
+/// `Player.chat(message)`: the player says something, as if typed in chat.
+pub fn ffi_native_bridge_player_chat_impl(
+    request: crate::proto::patchbukkit::entity::PlayerChatRequest,
+) -> Option<()> {
+    let ctx = CALLBACK_CONTEXT.get()?;
+    let server = ctx.plugin_context.server.clone();
+    let player = with_player(request.uuid.as_ref(), |p| p)?;
+    // Runs on the server runtime: the chat event goes back through the JVM worker,
+    // which is busy running the caller.
+    ctx.runtime.spawn(async move {
+        let mut event = pumpkin::plugin::player::player_chat::PlayerChatEvent::new(
+            player.clone(),
+            request.message,
+            vec![],
+            None,
+        );
+        server.plugin_manager.fire(&server, &mut event).await;
+        if pumpkin::plugin::Cancellable::cancelled(&event) {
+            return;
+        }
+        let line = pumpkin_util::text::TextComponent::chat_decorated(
+            &server.advanced_config.chat.format,
+            &player.gameprofile.name,
+            &event.message,
+        );
+        for p in server.get_all_players() {
+            p.send_system_message(&line);
+        }
+    });
+    Some(())
 }

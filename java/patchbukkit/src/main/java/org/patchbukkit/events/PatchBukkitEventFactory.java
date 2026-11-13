@@ -1,14 +1,23 @@
 package org.patchbukkit.events;
 
 import com.google.protobuf.InvalidProtocolBufferException;
+import io.papermc.paper.chat.ChatRenderer;
+import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.event.inventory.ClickType;
+import org.bukkit.event.inventory.InventoryAction;
+import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.InventoryView;
 import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -16,6 +25,8 @@ import patchbukkit.common.UUID;
 import patchbukkit.events.*;
 
 import java.lang.reflect.Constructor;
+import java.util.Collections;
+import java.util.WeakHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -38,11 +49,120 @@ public class PatchBukkitEventFactory {
         if (event == null) {
             return FireEventResponse.newBuilder().setCancelled(false).build().toByteArray();
         }
+        if (event instanceof org.bukkit.event.player.AsyncPlayerChatEvent chat) {
+            return fireChatEvent(chat, pluginName);
+        }
         if (Bukkit.getServer() instanceof org.patchbukkit.PatchBukkitServer server) {
             server.getEventManager().fireEvent(event, pluginName);
         }
         return toFireEventResponse(event);
     }
+
+    /**
+     * Fires a Pumpkin chat message to both the legacy AsyncPlayerChatEvent and Paper's
+     * AsyncChatEvent listeners of one plugin, then returns the edits they made: the message,
+     * the rendered line (only when a format or renderer was changed or the recipients were
+     * narrowed) and the recipients. Pumpkin never fires either event itself.
+     */
+    private static byte[] fireChatEvent(@NotNull org.bukkit.event.player.AsyncPlayerChatEvent legacy, @NotNull String pluginName) {
+        if (!(Bukkit.getServer() instanceof org.patchbukkit.PatchBukkitServer server)) {
+            return FireEventResponse.newBuilder().setCancelled(false).build().toByteArray();
+        }
+        org.bukkit.entity.Player sender = legacy.getPlayer();
+        String originalMessage = legacy.getMessage();
+        // Chat is shared by every plugin (see CHAT_HANDLER_PLUGIN in Rust): fire the legacy event
+        // through all listeners in priority order so each one sees the previous plugin's edits.
+        server.getEventManager().callEvent(legacy);
+
+        io.papermc.paper.event.player.AsyncChatEvent paper = null;
+        ChatRenderer defaultRenderer = ChatRenderer.defaultRenderer();
+        try {
+            Component original = Component.text(originalMessage);
+            // Pumpkin dispatches chat on the primary thread, so the events are synchronous; Essentials
+            // derives its follow-up chat event's async flag from these and cannot fire it otherwise.
+            paper = new io.papermc.paper.event.player.AsyncChatEvent(
+                false, sender, new java.util.HashSet<Audience>(legacy.getRecipients()),
+                defaultRenderer, original, original, null);
+            server.getEventManager().callEvent(paper);
+        } catch (Throwable t) {
+            LOGGER.log(Level.WARNING, "Could not fire Paper AsyncChatEvent for chat from " + sender.getName(), t);
+            paper = null;
+        }
+
+        boolean cancelled = legacy.isCancelled() || (paper != null && paper.isCancelled());
+
+        String message = legacy.getMessage();
+        if (paper != null) {
+            String paperMessage = PlainTextComponentSerializer.plainText().serialize(paper.message());
+            if (!paperMessage.equals(originalMessage)) {
+                message = paperMessage;
+            }
+        }
+
+        String rendered = "";
+        if (paper != null && !defaultRenderer.equals(paper.renderer())) {
+            try {
+                Component line = paper.renderer().render(sender, Component.text(sender.getDisplayName()), Component.text(message), sender);
+                rendered = LegacyComponentSerializer.legacySection().serialize(line);
+            } catch (RuntimeException e) {
+                LOGGER.log(Level.WARNING, "Paper chat renderer failed; using Pumpkin's default format", e);
+            }
+        } else if (!BUKKIT_DEFAULT_CHAT_FORMAT.equals(legacy.getFormat())) {
+            rendered = formatChatLine(legacy.getFormat(), sender, message);
+        }
+
+        java.util.Set<String> recipients = new java.util.LinkedHashSet<>();
+        for (Player p : legacy.getRecipients()) {
+            recipients.add(p.getUniqueId().toString());
+        }
+        if (paper != null) {
+            java.util.Set<String> paperViewers = new java.util.HashSet<>();
+            for (Audience a : paper.viewers()) {
+                if (a instanceof Player p) paperViewers.add(p.getUniqueId().toString());
+            }
+            recipients.retainAll(paperViewers);
+        }
+        boolean everyoneOnline = true;
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            if (!recipients.contains(p.getUniqueId().toString())) {
+                everyoneOnline = false;
+                break;
+            }
+        }
+        if (rendered.isEmpty() && !everyoneOnline) {
+            // Pumpkin's broadcast ignores recipients, so a narrowed audience needs our own line.
+            rendered = formatChatLine(BUKKIT_DEFAULT_CHAT_FORMAT, sender, message);
+        }
+
+        var chatData = patchbukkit.events.AsyncPlayerChatEvent.newBuilder()
+            .setPlayerUuid(UUID.newBuilder().setValue(sender.getUniqueId().toString()))
+            .setMessage(message)
+            .setFormat(rendered);
+        for (String recipient : recipients) {
+            chatData.addRecipientsUuids(UUID.newBuilder().setValue(recipient));
+        }
+        return FireEventResponse.newBuilder()
+            .setCancelled(cancelled)
+            .setData(Event.newBuilder().setAsyncPlayerChat(chatData))
+            .build()
+            .toByteArray();
+    }
+
+    private static String formatChatLine(String format, Player sender, String message) {
+        try {
+            return String.format(format, sender.getDisplayName(), message);
+        } catch (RuntimeException e) {
+            LOGGER.log(Level.WARNING, "Invalid chat format from plugin, sending it unrendered", e);
+            return format;
+        }
+    }
+
+    /**
+     * Join and quit messages as they were handed to the plugin, so an unchanged message is not
+     * sent back to Rust (Pumpkin cannot parse every translatable component we would return).
+     */
+    private static final java.util.Map<org.bukkit.event.Event, Component> ORIGINAL_JOIN_QUIT_MESSAGES =
+        Collections.synchronizedMap(new WeakHashMap<>());
 
     @Nullable
     public static org.bukkit.event.Event createEvent(@NotNull Event event) {
@@ -298,7 +418,9 @@ public class PatchBukkitEventFactory {
             }
             case INVENTORY_OPEN -> {
                 var ev = event.getInventoryOpen();
-                yield createGenericBukkitEvent("org.bukkit.event.inventory.InventoryOpenEvent", ev);
+                Player player = getPlayer(ev.getPlayerUuid().getValue());
+                if (player == null) yield null;
+                yield new org.bukkit.event.inventory.InventoryOpenEvent(viewFor(player, ""));
             }
             case INVENTORY_PICKUP_ITEM -> {
                 var ev = event.getInventoryPickupItem();
@@ -528,7 +650,7 @@ public class PatchBukkitEventFactory {
                 var ev = event.getAsyncPlayerChat();
                 Player player = getPlayer(ev.getPlayerUuid().getValue());
                 if (player == null) yield null;
-                yield new org.bukkit.event.player.AsyncPlayerChatEvent(true, player, ev.getMessage(), new java.util.HashSet<>(Bukkit.getOnlinePlayers()));
+                yield new org.bukkit.event.player.AsyncPlayerChatEvent(false, player, ev.getMessage(), new java.util.HashSet<>(Bukkit.getOnlinePlayers()));
             }
             case ASYNC_PLAYER_PRE_LOGIN -> {
                 var ev = event.getAsyncPlayerPreLogin();
@@ -553,11 +675,26 @@ public class PatchBukkitEventFactory {
             }
             case INVENTORY_CLOSE -> {
                 var ev = event.getInventoryClose();
-                yield createGenericBukkitEvent("org.bukkit.event.inventory.InventoryCloseEvent", ev);
+                Player player = getPlayer(ev.getPlayerUuid().getValue());
+                if (player == null) yield null;
+                InventoryView view = viewFor(player, ev.getWindowType());
+                // The window is closed on the Pumpkin side, so the tracked view is no longer open.
+                if (player instanceof org.patchbukkit.entity.PatchBukkitHumanEntity human) {
+                    human.clearOpenInventoryView();
+                }
+                yield new org.bukkit.event.inventory.InventoryCloseEvent(view);
             }
             case INVENTORY_CLICK -> {
                 var ev = event.getInventoryClick();
-                yield createGenericBukkitEvent("org.bukkit.event.inventory.InventoryClickEvent", ev);
+                Player player = getPlayer(ev.getPlayerUuid().getValue());
+                if (player == null) yield null;
+                InventoryView view = viewFor(player, ev.getWindowType());
+                int rawSlot = ev.getRawSlot();
+                InventoryType.SlotType slotType = rawSlot >= 0 && rawSlot < view.getTopInventory().getSize()
+                    ? InventoryType.SlotType.CONTAINER
+                    : InventoryType.SlotType.QUICKBAR;
+                yield new org.bukkit.event.inventory.InventoryClickEvent(
+                    view, slotType, rawSlot, clickTypeFor(ev.getClickType()), InventoryAction.PICKUP_ALL);
             }
             case PLAYER_ITEM_HELD -> {
                 var ev = event.getPlayerItemHeld();
@@ -608,7 +745,7 @@ public class PatchBukkitEventFactory {
                 var ev = event.getPlayerChat();
                 Player player = getPlayer(ev.getPlayerUuid().getValue());
                 if (player == null) yield null;
-                yield new org.bukkit.event.player.AsyncPlayerChatEvent(true, player, ev.getMessage(), new java.util.HashSet<>(Bukkit.getOnlinePlayers()));
+                yield new org.bukkit.event.player.AsyncPlayerChatEvent(false, player, ev.getMessage(), new java.util.HashSet<>(Bukkit.getOnlinePlayers()));
             }
             case PLAYER_COMMAND_PREPROCESS -> {
                 var ev = event.getPlayerCommandPreprocess();
@@ -705,7 +842,9 @@ public class PatchBukkitEventFactory {
                     pbe.setEntityId(ev.getEntityId());
                 }
                 Component msg = ev.getJoinMessage().isEmpty() ? Component.empty() : GsonComponentSerializer.gson().deserialize(ev.getJoinMessage());
-                yield new org.bukkit.event.player.PlayerJoinEvent(player, msg);
+                var joinEvent = new org.bukkit.event.player.PlayerJoinEvent(player, msg);
+                ORIGINAL_JOIN_QUIT_MESSAGES.put(joinEvent, msg);
+                yield joinEvent;
             }
             case PLAYER_KICK -> {
                 var ev = event.getPlayerKick();
@@ -725,7 +864,9 @@ public class PatchBukkitEventFactory {
                 }
                 if (player == null) yield null;
                 Component msg = ev.getLeaveMessage().isEmpty() ? Component.empty() : GsonComponentSerializer.gson().deserialize(ev.getLeaveMessage());
-                yield new org.bukkit.event.player.PlayerQuitEvent(player, msg);
+                var quitEvent = new org.bukkit.event.player.PlayerQuitEvent(player, msg);
+                ORIGINAL_JOIN_QUIT_MESSAGES.put(quitEvent, msg);
+                yield quitEvent;
             }
             case PLAYER_LEVEL_CHANGE -> {
                 var ev = event.getPlayerLevelChange();
@@ -1209,18 +1350,94 @@ public class PatchBukkitEventFactory {
         }
     }
 
+    /** The view the player has open, or a fresh view of the Pumpkin window type when Java did not open it. */
+    @NotNull
+    private static InventoryView viewFor(@NotNull Player player, @NotNull String windowType) {
+        InventoryView open = player.getOpenInventory();
+        if (open != null) {
+            return open;
+        }
+        Inventory top;
+        if (windowType.startsWith("Generic9x")) {
+            int rows = windowType.charAt(windowType.length() - 1) - '0';
+            top = Bukkit.createInventory(player, Math.max(1, Math.min(6, rows)) * 9);
+        } else {
+            InventoryType type = switch (windowType) {
+                case "Crafting" -> InventoryType.WORKBENCH;
+                case "Furnace" -> InventoryType.FURNACE;
+                case "BlastFurnace" -> InventoryType.BLAST_FURNACE;
+                case "Smoker" -> InventoryType.SMOKER;
+                case "Anvil" -> InventoryType.ANVIL;
+                case "Enchantment" -> InventoryType.ENCHANTING;
+                case "BrewingStand" -> InventoryType.BREWING;
+                case "Hopper" -> InventoryType.HOPPER;
+                case "Merchant" -> InventoryType.MERCHANT;
+                default -> null;
+            };
+            top = type != null ? Bukkit.createInventory(player, type) : Bukkit.createInventory(player, 27);
+        }
+        return new org.patchbukkit.inventory.PatchBukkitInventoryView(player, top);
+    }
+
+    @NotNull
+    private static ClickType clickTypeFor(@NotNull String pumpkinName) {
+        try {
+            return ClickType.valueOf(pumpkinName.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return ClickType.LEFT;
+        }
+    }
+
+    private static final String BUKKIT_DEFAULT_CHAT_FORMAT = "<%1$s> %2$s";
+
     @NotNull
     public static byte[] toFireEventResponse(@NotNull org.bukkit.event.Event event) {
         try {
             boolean cancelled = event instanceof org.bukkit.event.Cancellable c && c.isCancelled();
-            return FireEventResponse.newBuilder()
-                .setCancelled(cancelled)
-                .build()
-                .toByteArray();
+            var builder = FireEventResponse.newBuilder().setCancelled(cancelled);
+            if (event instanceof org.bukkit.event.player.PlayerJoinEvent join) {
+                Component original = ORIGINAL_JOIN_QUIT_MESSAGES.remove(join);
+                Component now = join.joinMessage();
+                if (original == null || !original.equals(now)) {
+                    builder.setData(Event.newBuilder().setPlayerJoin(
+                        PlayerJoinEvent.newBuilder()
+                            .setPlayerUuid(UUID.newBuilder().setValue(join.getPlayer().getUniqueId().toString()))
+                            .setJoinMessage(serializeMessage(now))
+                    ).build());
+                }
+            } else if (event instanceof org.bukkit.event.block.SignChangeEvent sign) {
+                var data = patchbukkit.events.SignChangeEvent.newBuilder()
+                    .setPlayerUuid(UUID.newBuilder().setValue(sign.getPlayer().getUniqueId().toString()))
+                    .setBlockX(sign.getBlock().getX())
+                    .setBlockY(sign.getBlock().getY())
+                    .setBlockZ(sign.getBlock().getZ());
+                for (int i = 0; i < 4; i++) {
+                    String line = sign.getLine(i);
+                    data.addLines(line == null ? "" : line);
+                }
+                builder.setData(Event.newBuilder().setSignChange(data).build());
+            } else if (event instanceof org.bukkit.event.player.PlayerQuitEvent quit) {
+                Component original = ORIGINAL_JOIN_QUIT_MESSAGES.remove(quit);
+                Component now = quit.quitMessage();
+                if (original == null || !original.equals(now)) {
+                    builder.setData(Event.newBuilder().setPlayerLeave(
+                        PlayerLeaveEvent.newBuilder()
+                            .setPlayerUuid(UUID.newBuilder().setValue(quit.getPlayer().getUniqueId().toString()))
+                            .setLeaveMessage(serializeMessage(now))
+                    ).build());
+                }
+            }
+            return builder.build().toByteArray();
         } catch (Throwable t) {
             LOGGER.log(Level.SEVERE, "Exception serializing event response: " + t.getMessage(), t);
             return FireEventResponse.newBuilder().setCancelled(false).build().toByteArray();
         }
+    }
+
+    /** Serializes a join/quit message as Minecraft JSON; a null message becomes an empty component. */
+    @NotNull
+    private static String serializeMessage(@Nullable Component message) {
+        return GsonComponentSerializer.gson().serialize(message == null ? Component.empty() : message);
     }
 
     @Nullable

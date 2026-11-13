@@ -2523,6 +2523,24 @@ impl PatchBukkitEvent for pumpkin::plugin::block::sign_change::SignChangeEvent {
         }
     }
 
+    fn apply_modifications(&mut self, _server: &Arc<Server>, data: Data) -> Option<()> {
+        let Data::SignChange(e) = data else {
+            return Some(());
+        };
+        if pumpkin::plugin::Cancellable::cancelled(self) || e.lines == self.lines {
+            return Some(());
+        }
+        // Pumpkin writes the lines from the packet, not from the event, so store the
+        // plugin's lines ourselves and stop Pumpkin from overwriting them.
+        let world = self.player.living_entity.entity.world.load_full();
+        if crate::java::native_callbacks::sign::write_sign_lines(&world, &self.block_pos, &e.lines) {
+            crate::java::native_callbacks::sign::clear_sign_editor(&world, &self.block_pos);
+            pumpkin::plugin::Cancellable::set_cancelled(self, true);
+            self.lines = e.lines;
+        }
+        Some(())
+    }
+
     fn set_cancelled(&mut self, cancelled: bool) {
         pumpkin::plugin::Cancellable::set_cancelled(self, cancelled);
     }
@@ -2680,6 +2698,7 @@ impl PatchBukkitEvent for pumpkin::plugin::player::async_player_chat::AsyncPlaye
                     }),
                     message: self.message.clone(),
                     format: serde_json::to_string(&self.format).unwrap_or_default(),
+                    recipients_uuids: Vec::new(),
                 })),
             },
             context: EventContext {
@@ -2856,6 +2875,11 @@ impl PatchBukkitEvent for pumpkin::plugin::player::inventory_close::InventoryClo
                     player_uuid: Some(Uuid {
                         value: self.player.gameprofile.id.to_string(),
                     }),
+                    window_type: self
+                        .window_type
+                        .as_ref()
+                        .map(|w| format!("{w:?}"))
+                        .unwrap_or_default(),
                 })),
             },
             context: EventContext {
@@ -2898,6 +2922,11 @@ impl PatchBukkitEvent for pumpkin::plugin::player::inventory_interact::Inventory
                         .map(|i| i32::from(i.item_count))
                         .unwrap_or(0),
                     hotbar_button: self.hotbar_button,
+                    window_type: self
+                        .window_type
+                        .as_ref()
+                        .map(|w| format!("{w:?}"))
+                        .unwrap_or_default(),
                 })),
             },
             context: EventContext {
@@ -3211,6 +3240,36 @@ impl PatchBukkitEvent for pumpkin::plugin::player::player_channel::PlayerChannel
 }
 
 impl PatchBukkitEvent for pumpkin::plugin::player::player_chat::PlayerChatEvent {
+    fn apply_modifications(&mut self, server: &Arc<Server>, data: Data) -> Option<()> {
+        let (message, format, recipients) = match data {
+            Data::PlayerChat(e) => (e.message, String::new(), e.recipients_uuids),
+            Data::AsyncPlayerChat(e) => (e.message, e.format, e.recipients_uuids),
+            _ => return Some(()),
+        };
+        self.message = message;
+        if pumpkin::plugin::Cancellable::cancelled(self) {
+            // A plugin cancelled the chat (e.g. a muted player): deliver nothing.
+            return Some(());
+        }
+        if format.is_empty() {
+            // No plugin re-rendered the line: Pumpkin's normal chat format applies.
+            return Some(());
+        }
+        // Pumpkin's broadcast ignores any plugin-provided format, so suppress it and deliver
+        // the rendered line to exactly the recipients the JVM side left in the event.
+        pumpkin::plugin::Cancellable::set_cancelled(self, true);
+        let line = pumpkin_util::text::TextComponent::from_legacy_string(&format);
+        let targets: Vec<Arc<pumpkin::entity::player::Player>> = recipients
+            .iter()
+            .filter_map(|u| uuid::Uuid::parse_str(&u.value).ok())
+            .filter_map(|id| server.get_player_by_uuid(id))
+            .collect();
+        for player in targets {
+            player.send_system_message(&line);
+        }
+        Some(())
+    }
+
     fn to_payload(&self, server: Arc<Server>) -> JvmEventPayload {
         JvmEventPayload {
             event: Event {
@@ -3721,8 +3780,65 @@ impl PatchBukkitEvent for pumpkin::plugin::player::player_item_mend::PlayerItemM
     }
 }
 
+/// Parses a Minecraft JSON text component sent back from the JVM. Adventure writes unstyled
+/// child text as bare JSON strings, which Pumpkin's component type does not accept, so those
+/// are turned into `{"text": ...}` objects first.
+fn parse_text_component(json: &str) -> Result<pumpkin_util::text::TextComponent, serde_json::Error> {
+    fn normalize(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::String(text) => {
+                *value = serde_json::json!({ "text": text.clone() });
+            }
+            serde_json::Value::Array(items) => items.iter_mut().for_each(normalize),
+            serde_json::Value::Object(fields) => {
+                for key in ["extra", "with"] {
+                    if let Some(children) = fields.get_mut(key) {
+                        normalize(children);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let mut value: serde_json::Value = serde_json::from_str(json)?;
+    normalize(&mut value);
+    // Round-trip through a string: the component type borrows from its input, which an owned
+    // `Value` cannot provide.
+    serde_json::from_str(&value.to_string())
+}
+
+/// True for a component that renders as nothing, which plugins use to hide a join/quit message.
+fn is_blank_component(component: &pumpkin_util::text::TextComponent) -> bool {
+    serde_json::to_value(component).is_ok_and(|v| {
+        v.get("text").and_then(serde_json::Value::as_str) == Some("") && v.get("extra").is_none()
+    })
+}
+
 impl PatchBukkitEvent for pumpkin::plugin::player::player_join::PlayerJoinEvent {
     fn to_payload(&self, server: Arc<Server>) -> JvmEventPayload {
+        // Pumpkin applies the gamemode's abilities and then restores the saved ones, so a survival
+        // player can rejoin with a stale mayfly/flying flag. Vanilla clears those for survival and
+        // adventure, and plugins that keep flight enabled (e.g. Essentials) re-enable it from their
+        // own data while handling this same event.
+        let gamemode = self.player.gamemode.load();
+        if !matches!(
+            gamemode,
+            pumpkin_util::GameMode::Creative | pumpkin_util::GameMode::Spectator
+        ) {
+            let mut abilities = self
+                .player
+                .abilities
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if abilities.allow_flying || abilities.flying {
+                abilities.allow_flying = false;
+                abilities.flying = false;
+                drop(abilities);
+                self.player.send_abilities_update();
+            }
+        }
+
         JvmEventPayload {
             event: Event {
                 data: Some(Data::PlayerJoin(PlayerJoinEvent {
@@ -3738,6 +3854,25 @@ impl PatchBukkitEvent for pumpkin::plugin::player::player_join::PlayerJoinEvent 
                 player: Some(self.player.clone()),
             },
         }
+    }
+
+    fn apply_modifications(&mut self, _server: &Arc<Server>, data: Data) -> Option<()> {
+        let Data::PlayerJoin(e) = data else {
+            return Some(());
+        };
+        if e.join_message.is_empty() {
+            return Some(());
+        }
+        match parse_text_component(&e.join_message) {
+            Ok(message) if message == self.join_message => {}
+            Ok(message) if is_blank_component(&message) => {
+                // A plugin set the join message to null: Pumpkin only broadcasts uncancelled joins.
+                pumpkin::plugin::Cancellable::set_cancelled(self, true);
+            }
+            Ok(message) => self.join_message = message,
+            Err(err) => tracing::warn!("Ignoring invalid join message from plugin: {err}"),
+        }
+        Some(())
     }
 
     fn set_cancelled(&mut self, cancelled: bool) {
@@ -3793,6 +3928,25 @@ impl PatchBukkitEvent for pumpkin::plugin::player::player_leash_entity::PlayerLe
 }
 
 impl PatchBukkitEvent for pumpkin::plugin::player::player_leave::PlayerLeaveEvent {
+    fn apply_modifications(&mut self, _server: &Arc<Server>, data: Data) -> Option<()> {
+        let Data::PlayerLeave(e) = data else {
+            return Some(());
+        };
+        if e.leave_message.is_empty() {
+            return Some(());
+        }
+        match parse_text_component(&e.leave_message) {
+            Ok(message) if message == self.leave_message => {}
+            Ok(message) if is_blank_component(&message) => {
+                // A plugin set the quit message to null: Pumpkin only broadcasts uncancelled quits.
+                pumpkin::plugin::Cancellable::set_cancelled(self, true);
+            }
+            Ok(message) => self.leave_message = message,
+            Err(err) => tracing::warn!("Ignoring invalid quit message from plugin: {err}"),
+        }
+        Some(())
+    }
+
     fn to_payload(&self, server: Arc<Server>) -> JvmEventPayload {
         JvmEventPayload {
             event: Event {

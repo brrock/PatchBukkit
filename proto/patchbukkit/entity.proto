@@ -301,3 +301,31 @@ message EntityPassengerRequest {
 message EntityActionResponse {
   bool success = 1;
 }
+
+message OpenPlayerInventoryRequest {
+  patchbukkit.common.UUID viewer = 1;
+  patchbukkit.common.UUID target = 2;
+  // Open the target's ender chest instead of their inventory.
+  bool ender_chest = 3;
+}
+
+message OpenWorkstationRequest {
+  patchbukkit.common.UUID viewer = 1;
+  // Bukkit InventoryType name: WORKBENCH, ANVIL, GRINDSTONE, STONECUTTER, LOOM, CARTOGRAPHY, SMITHING.
+  string kind = 2;
+}
+
+message OpenWorkstationResponse {
+  bool opened = 1;
+}
+
+message DispatchServerCommandRequest {
+  // The player running the command; unset for the console.
+  patchbukkit.common.UUID player = 1;
+  string command = 2;
+}
+
+message PlayerChatRequest {
+  patchbukkit.common.UUID uuid = 1;
+  string message = 2;
+}

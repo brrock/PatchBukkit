@@ -63,7 +63,7 @@ public class PatchBukkitHumanEntity
     protected final PermissibleBase perm = new PermissibleBase(this);
     protected final PlayerInventory inventory = new org.patchbukkit.inventory.PatchBukkitPlayerInventory(this);
     protected final EntityEquipment equipment = new org.patchbukkit.inventory.PatchBukkitEntityEquipment(this);
-    protected final Inventory enderChest = new PatchBukkitInventory(this, 27, "Ender Chest");
+    protected final Inventory enderChest = new org.patchbukkit.inventory.PatchBukkitEnderChest(this);
     private ItemStack cursorItem = ItemStack.empty();
     private InventoryView openInventoryView;
     private final Set<NamespacedKey> discoveredRecipes = new HashSet<>();
@@ -160,7 +160,7 @@ public class PatchBukkitHumanEntity
                 .setIsOp(value)
                 .build();
             NativeBridgeFfi.setOp(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setOp", t); }
         this.perm.recalculatePermissions();
     }
 
@@ -231,7 +231,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return GameMode.getByValue(resp.getGamemode());
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getGameMode", t); }
         return GameMode.SURVIVAL;
     }
 
@@ -244,7 +244,7 @@ public class PatchBukkitHumanEntity
                 .setGamemode(mode.getValue())
                 .build();
             NativeBridgeFfi.setGamemode(request);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setGameMode", t); }
     }
 
     @Override
@@ -254,7 +254,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getIsSneaking();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isSneaking", t); }
         return false;
     }
 
@@ -266,7 +266,7 @@ public class PatchBukkitHumanEntity
                 .setSneaking(sneaking)
                 .build();
             NativeBridgeFfi.setSneaking(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setSneaking", t); }
     }
 
     public boolean isSprinting() {
@@ -275,7 +275,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getIsSprinting();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isSprinting", t); }
         return false;
     }
 
@@ -286,7 +286,7 @@ public class PatchBukkitHumanEntity
                 .setSprinting(sprinting)
                 .build();
             NativeBridgeFfi.setSprinting(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setSprinting", t); }
     }
 
     @Override
@@ -296,7 +296,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getIsGliding();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isGliding", t); }
         return false;
     }
 
@@ -311,7 +311,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getIsSwimming();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isSwimming", t); }
         return false;
     }
 
@@ -326,7 +326,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getIsSleeping();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("isSleeping", t); }
         return false;
     }
 
@@ -377,7 +377,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getFoodLevel();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getFoodLevel", t); }
         return 20;
     }
 
@@ -389,7 +389,7 @@ public class PatchBukkitHumanEntity
                 .setFoodLevel(value)
                 .build();
             NativeBridgeFfi.setFoodLevel(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setFoodLevel", t); }
     }
 
     @Override
@@ -399,7 +399,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getSaturation();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getSaturation", t); }
         return 5.0f;
     }
 
@@ -411,7 +411,7 @@ public class PatchBukkitHumanEntity
                 .setSaturation(value)
                 .build();
             NativeBridgeFfi.setSaturation(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setSaturation", t); }
     }
 
     @Override
@@ -421,7 +421,7 @@ public class PatchBukkitHumanEntity
             if (resp != null) {
                 return resp.getExhaustion();
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getExhaustion", t); }
         return 0.0f;
     }
 
@@ -433,7 +433,7 @@ public class PatchBukkitHumanEntity
                 .setExhaustion(value)
                 .build();
             NativeBridgeFfi.setExhaustion(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setExhaustion", t); }
     }
 
     @Override
@@ -486,7 +486,7 @@ public class PatchBukkitHumanEntity
                 .build();
             var resp = NativeBridgeFfi.getCooldown(req);
             if (resp != null) return resp.getIsOnCooldown();
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("hasCooldown", t); }
         return this.cooldowns.getOrDefault(material, 0) > 0;
     }
 
@@ -500,7 +500,7 @@ public class PatchBukkitHumanEntity
                 .build();
             var resp = NativeBridgeFfi.getCooldown(req);
             if (resp != null) return (int) (resp.getCooldown() * 100);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getCooldown", t); }
         return this.cooldowns.getOrDefault(material, 0);
     }
 
@@ -515,7 +515,7 @@ public class PatchBukkitHumanEntity
                 .setDurationTicks(ticks)
                 .build();
             NativeBridgeFfi.setCooldown(req);
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("setCooldown", t); }
     }
 
     @Override
@@ -554,11 +554,51 @@ public class PatchBukkitHumanEntity
         if (this.openInventoryView != null) {
             closeInventory(Reason.OPEN_NEW);
         }
-        this.openInventoryView = new org.patchbukkit.inventory.PatchBukkitInventoryView(this, inventory);
+        InventoryView view = new org.patchbukkit.inventory.PatchBukkitInventoryView(this, inventory);
+        this.openInventoryView = view;
         try {
-            NativeBridgeFfi.openEnderChest(BridgeUtils.convertUuid(getUniqueId()));
-        } catch (Throwable ignored) {}
-        return this.openInventoryView;
+            if (inventory instanceof org.bukkit.inventory.PlayerInventory pinv
+                    && pinv.getHolder() instanceof org.bukkit.entity.HumanEntity target) {
+                NativeBridgeFfi.openPlayerInventory(
+                    patchbukkit.entity.OpenPlayerInventoryRequest.newBuilder()
+                        .setViewer(BridgeUtils.convertUuid(getUniqueId()))
+                        .setTarget(BridgeUtils.convertUuid(target.getUniqueId()))
+                        .build());
+            } else if (inventory instanceof org.patchbukkit.inventory.PatchBukkitEnderChest ec) {
+                NativeBridgeFfi.openPlayerInventory(
+                    patchbukkit.entity.OpenPlayerInventoryRequest.newBuilder()
+                        .setViewer(BridgeUtils.convertUuid(getUniqueId()))
+                        .setTarget(BridgeUtils.convertUuid(ec.getOwner().getUniqueId()))
+                        .setEnderChest(true)
+                        .build());
+            } else if (inventory.getType() == org.bukkit.event.inventory.InventoryType.CHEST
+                    && inventory instanceof org.patchbukkit.inventory.PatchBukkitInventory custom
+                    && custom.openNative(this)) {
+                // shown as a chest by Pumpkin
+            } else if (NativeBridgeFfi.openWorkstation(
+                    patchbukkit.entity.OpenWorkstationRequest.newBuilder()
+                        .setViewer(BridgeUtils.convertUuid(getUniqueId()))
+                        .setKind(inventory.getType().name())
+                        .build()).getOpened()) {
+                // opened by Pumpkin
+            } else {
+                BridgeUtils.logBridgeFailure("openInventory",
+                    new UnsupportedOperationException("opening " + inventory.getType() + " inventories"));
+                view = null;
+            }
+        } catch (Throwable t) {
+            BridgeUtils.logBridgeFailure("openInventory", t);
+            view = null;
+        }
+        // Opening the new window closes the old one, and that close event clears the
+        // tracked view, so restore it once Pumpkin has opened the window.
+        this.openInventoryView = view;
+        return view;
+    }
+
+    /** Forgets the tracked view once Pumpkin has closed the window. */
+    public void clearOpenInventoryView() {
+        this.openInventoryView = null;
     }
 
     @Override

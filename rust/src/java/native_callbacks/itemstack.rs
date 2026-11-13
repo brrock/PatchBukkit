@@ -50,7 +50,53 @@ fn read_enchantments(stack: &PumpkinItemStack) -> Vec<(String, i32)> {
     out
 }
 
-fn pumpkin_item_to_proto(stack: &PumpkinItemStack) -> ProtoItemStack {
+/// Reads name, lore, damage, unbreakable and dye colour from a stack's patch through
+/// `write_data` (see [`read_enchantments`] for why nothing is downcast).
+fn read_meta(stack: &PumpkinItemStack) -> ProtoItemStack {
+    let mut out = ProtoItemStack::default();
+    for (component, value) in &stack.patch {
+        let Some(value) = value else { continue };
+        let data = value.write_data();
+        match *component {
+            DataComponent::CustomName => {
+                if let NbtTag::String(name) = data {
+                    out.custom_name = Some(name.to_string());
+                }
+            }
+            DataComponent::Lore => {
+                if let NbtTag::List(lines) = data {
+                    out.lore = lines
+                        .iter()
+                        .filter_map(NbtTag::extract_string)
+                        .map(ToString::to_string)
+                        .collect();
+                }
+            }
+            DataComponent::Damage => out.damage = data.extract_int().unwrap_or(0),
+            DataComponent::Unbreakable => out.unbreakable = true,
+            DataComponent::DyedColor => out.dyed_color = data.extract_int(),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Quotes a string as an SNBT string literal.
+fn snbt_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            _ => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+pub(crate) fn pumpkin_item_to_proto(stack: &PumpkinItemStack) -> ProtoItemStack {
     if stack.is_empty() {
         ProtoItemStack {
             r#type: "minecraft:air".to_string(),
@@ -68,6 +114,7 @@ fn pumpkin_item_to_proto(stack: &PumpkinItemStack) -> ProtoItemStack {
             r#type,
             amount: u32::from(stack.item_count),
             enchantments: read_enchantments(stack).into_iter().collect(),
+            ..read_meta(stack)
         }
     }
 }
@@ -121,6 +168,7 @@ fn server_item_parser() -> Option<ServerArgType> {
 /// Builds the `item[components]` string understood by `ItemStackArgumentType`.
 fn item_spec(key: &str, proto: &ProtoItemStack) -> String {
     let mut spec = format!("minecraft:{key}");
+    let mut components: Vec<String> = Vec::new();
     let mut enchants: Vec<_> = proto
         .enchantments
         .iter()
@@ -140,7 +188,26 @@ fn item_spec(key: &str, proto: &ProtoItemStack) -> String {
             })
             .collect::<Vec<_>>()
             .join(",");
-        spec.push_str(&format!("[enchantments={{{body}}}]"));
+        components.push(format!("enchantments={{{body}}}"));
+    }
+    if let Some(name) = &proto.custom_name {
+        components.push(format!("custom_name={}", snbt_string(name)));
+    }
+    if !proto.lore.is_empty() {
+        let lines: Vec<String> = proto.lore.iter().map(|l| snbt_string(l)).collect();
+        components.push(format!("lore=[{}]", lines.join(",")));
+    }
+    if proto.damage > 0 {
+        components.push(format!("damage={}", proto.damage));
+    }
+    if proto.unbreakable {
+        components.push("unbreakable={}".to_string());
+    }
+    if let Some(rgb) = proto.dyed_color {
+        components.push(format!("dyed_color={rgb}"));
+    }
+    if !components.is_empty() {
+        spec.push_str(&format!("[{}]", components.join(",")));
     }
     spec
 }
@@ -164,9 +231,14 @@ fn server_built_stack(key: &str, proto: &ProtoItemStack) -> Option<PumpkinItemSt
     if !is_safe_ident(key) {
         return None;
     }
+    let count = proto.amount.min(u32::from(u8::MAX)) as u8;
+    parse_server_stack(&item_spec(key, proto), key, count)
+}
+
+/// Parses `item[components]` with the server's parser, giving a stack the server owns.
+pub(crate) fn parse_server_stack(spec: &str, key: &str, count: u8) -> Option<PumpkinItemStack> {
     let parser = server_item_parser()?;
-    let spec = item_spec(key, proto);
-    let parsed = parser.parse(&mut StringReader::new(spec)).ok()?;
+    let parsed = parser.parse(&mut StringReader::new(spec.to_string())).ok()?;
     let raw = Box::into_raw(parsed).cast::<PumpkinItemStack>();
     let mut stack = unsafe { *Box::from_raw(raw) };
     let got = stack.item.registry_key;
@@ -175,11 +247,11 @@ fn server_built_stack(key: &str, proto: &ProtoItemStack) -> Option<PumpkinItemSt
         std::mem::forget(stack);
         return None;
     }
-    stack.item_count = proto.amount.min(u32::from(u8::MAX)) as u8;
+    stack.item_count = count;
     Some(stack)
 }
 
-fn proto_item_to_pumpkin(proto: Option<&ProtoItemStack>) -> PumpkinItemStack {
+pub(crate) fn proto_item_to_pumpkin(proto: Option<&ProtoItemStack>) -> PumpkinItemStack {
     let Some(proto) = proto else {
         return PumpkinItemStack::EMPTY.clone();
     };
@@ -367,5 +439,34 @@ pub fn ffi_native_bridge_clear_player_inventory_impl(request: Uuid) -> Option<()
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         eq_guard.clear();
+    })
+}
+
+pub fn ffi_native_bridge_get_ender_chest_impl(
+    request: Uuid,
+) -> Option<crate::proto::patchbukkit::itemstack::EnderChestContents> {
+    use pumpkin_inventory::Inventory;
+    with_player(Some(&request), |player| {
+        let inv = player.ender_chest_inventory();
+        crate::proto::patchbukkit::itemstack::EnderChestContents {
+            items: (0..inv.size())
+                .map(|i| pumpkin_item_to_proto(&inv.get_stack(i)))
+                .collect(),
+        }
+    })
+}
+
+pub fn ffi_native_bridge_set_ender_chest_slot_impl(
+    request: SetPlayerInventorySlotRequest,
+) -> Option<()> {
+    use pumpkin_inventory::Inventory;
+    let slot = request.slot as usize;
+    let item = proto_item_to_pumpkin(request.item.as_ref());
+    with_player(request.uuid.as_ref(), |player| {
+        let inv = player.ender_chest_inventory();
+        if slot < inv.size() {
+            inv.set_stack(slot, item);
+            inv.mark_dirty();
+        }
     })
 }

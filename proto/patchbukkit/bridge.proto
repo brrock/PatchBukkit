@@ -85,6 +85,15 @@ service NativeBridge {
   rpc GetCooldown(patchbukkit.entity.GetCooldownRequest) returns (patchbukkit.entity.GetCooldownResponse);
 
   rpc OpenEnderChest(patchbukkit.common.UUID) returns (google.protobuf.Empty);
+  rpc OpenCustomInventory(patchbukkit.itemstack.CustomInventoryRequest) returns (patchbukkit.itemstack.CustomInventoryResponse);
+  rpc GetCustomInventory(patchbukkit.itemstack.CustomInventoryRequest) returns (patchbukkit.itemstack.CustomInventoryResponse);
+  rpc SetCustomInventory(patchbukkit.itemstack.CustomInventoryRequest) returns (patchbukkit.itemstack.CustomInventoryResponse);
+  rpc DispatchServerCommand(patchbukkit.entity.DispatchServerCommandRequest) returns (google.protobuf.Empty);
+  rpc PlayerChat(patchbukkit.entity.PlayerChatRequest) returns (google.protobuf.Empty);
+  rpc OpenWorkstation(patchbukkit.entity.OpenWorkstationRequest) returns (patchbukkit.entity.OpenWorkstationResponse);
+  rpc GetEnderChest(patchbukkit.common.UUID) returns (patchbukkit.itemstack.EnderChestContents);
+  rpc SetEnderChestSlot(patchbukkit.itemstack.SetPlayerInventorySlotRequest) returns (google.protobuf.Empty);
+  rpc OpenPlayerInventory(patchbukkit.entity.OpenPlayerInventoryRequest) returns (google.protobuf.Empty);
   rpc UpdateInventory(patchbukkit.common.UUID) returns (google.protobuf.Empty);
 
   rpc GetPlayerInventory(patchbukkit.common.UUID) returns (patchbukkit.itemstack.GetPlayerInventoryResponse);
@@ -98,6 +107,8 @@ service NativeBridge {
   rpc SpawnParticle(patchbukkit.world.SpawnParticleRequest) returns (google.protobuf.Empty);
   rpc GetWorlds(patchbukkit.common.EmptyRequest) returns (patchbukkit.world.GetWorldsResponse);
   rpc GetWorldBorder(patchbukkit.world.GetWorldBorderRequest) returns (patchbukkit.world.WorldBorderData);
+  rpc GetSignLines(patchbukkit.world.SignLinesRequest) returns (patchbukkit.world.SignLinesResponse);
+  rpc SetSignLines(patchbukkit.world.SignLinesRequest) returns (patchbukkit.world.SignLinesResponse);
   rpc SetWorldBorder(patchbukkit.world.SetWorldBorderRequest) returns (google.protobuf.Empty);
 
   rpc RegisterEvent(patchbukkit.events.RegisterEventRequest) returns (google.protobuf.Empty);

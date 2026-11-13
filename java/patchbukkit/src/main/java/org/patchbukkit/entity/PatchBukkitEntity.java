@@ -190,10 +190,24 @@ public class PatchBukkitEntity implements Entity {
 
     @Override
     public void sendMessage(String message) {
+        if (message == null) return;
+        try {
+            var request = patchbukkit.message.SendMessageRequest.newBuilder()
+                .setUuid(BridgeUtils.convertUuid(this.getUniqueId()))
+                .setMessage(message)
+                .build();
+            NativeBridgeFfi.sendMessage(request);
+        } catch (Throwable t) {
+            BridgeUtils.logBridgeFailure("sendMessage", t);
+        }
     }
 
     @Override
     public void sendMessage(String... messages) {
+        if (messages == null) return;
+        for (String msg : messages) {
+            sendMessage(msg);
+        }
     }
 
     @Override
@@ -333,7 +347,7 @@ public class PatchBukkitEntity implements Entity {
                 var position = location.getPosition();
                 return new Location(world, position.getX(), position.getY(), position.getZ(), location.getYaw(), location.getPitch());
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getLocation", t); }
         Location fallback = this.cachedLocation != null ? this.cachedLocation.clone() : new Location(null, 0, 0, 0);
         if (fallback.getWorld() == null && !Bukkit.getWorlds().isEmpty()) {
             fallback.setWorld(Bukkit.getWorlds().get(0));
@@ -425,7 +439,7 @@ public class PatchBukkitEntity implements Entity {
             if (location != null && location.hasWorld() && location.getWorld().hasUuid()) {
                 return PatchBukkitWorld.getOrCreate(BridgeUtils.convertUuid(location.getWorld().getUuid()));
             }
-        } catch (Throwable ignored) {}
+        } catch (Throwable t) { BridgeUtils.logBridgeFailure("getWorld", t); }
         if (this.cachedLocation != null && this.cachedLocation.getWorld() != null) {
             return this.cachedLocation.getWorld();
         }
@@ -496,7 +510,7 @@ public class PatchBukkitEntity implements Entity {
                 if (resp != null && resp.getEntityId() > 0) {
                     this.entityId = resp.getEntityId();
                 }
-            } catch (Throwable ignored) {}
+            } catch (Throwable t) { BridgeUtils.logBridgeFailure("getEntityId", t); }
         }
         if (this.entityId <= 0) {
             this.entityId = NEXT_ENTITY_ID.incrementAndGet();

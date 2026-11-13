@@ -212,6 +212,26 @@ public class PatchBukkitRegistry<P, B extends Keyed> implements Registry<B> {
     }
 
     @SuppressWarnings("unchecked")
+    /** A minimal instance of a keyed registry interface: identity, key and translation key. */
+    private static Object keyedHandle(Class<?> type, NamespacedKey key) {
+        return java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "getKey", "key", "getKeyOrThrow", "getKeyOrNull" -> key;
+                case "isRegistered" -> true;
+                case "translationKey" -> type.getSimpleName().toLowerCase(java.util.Locale.ROOT) + "." + key.getNamespace() + "." + key.getKey();
+                case "hashCode" -> key.hashCode();
+                case "equals" -> args[0] == proxy;
+                case "toString" -> type.getSimpleName() + "{" + key + "}";
+                default -> {
+                    Class<?> r = method.getReturnType();
+                    if (!r.isPrimitive()) yield null;
+                    if (r == boolean.class) yield false;
+                    if (r == void.class) yield null;
+                    yield r == long.class ? (Object) 0L : r == float.class ? (Object) 0f : r == double.class ? (Object) 0d : (Object) 0;
+                }
+            });
+    }
+
     private static <B extends Keyed> Map<NamespacedKey, B> autoDiscover(Class<B> clazz) {
         Map<NamespacedKey, B> map = new LinkedHashMap<>();
         if (clazz == null) return map;
@@ -328,6 +348,17 @@ public class PatchBukkitRegistry<P, B extends Keyed> implements Registry<B> {
                     entries.put(key, (B) damageType);
                     return (B) damageType;
                 } catch (Throwable ignored) {}
+            }
+            // Fallback for data-driven variant registries (Cow.Variant, Pig.Variant, Cat.Type, ...):
+            // their constants are looked up through this registry in <clinit>, and there is no
+            // NMS registry behind them, so stand in a keyed handle for vanilla keys.
+            if (registryKey != null && "minecraft".equals(key.getNamespace())) {
+                Class<?> valueClass = LegacyRegistryIdentifiers.KEY_TO_CLASS_MAP.get(registryKey);
+                if (valueClass != null && valueClass.isInterface()) {
+                    B handle = (B) keyedHandle(valueClass, key);
+                    entries.put(key, handle);
+                    return handle;
+                }
             }
         } finally {
             fallbackSet.remove(key);

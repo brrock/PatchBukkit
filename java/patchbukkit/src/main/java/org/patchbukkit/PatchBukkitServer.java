@@ -1478,7 +1478,25 @@ public class PatchBukkitServer implements Server {
         if (sender == null) throw new IllegalArgumentException("Sender cannot be null");
         if (commandLine == null) throw new IllegalArgumentException("CommandLine cannot be null");
 
-        return this.commandMap.dispatch(sender, commandLine);
+        if (this.commandMap.dispatch(sender, commandLine)) {
+            return true;
+        }
+        // Not a Bukkit command: hand it to Pumpkin (vanilla commands such as /say, /give).
+        String name = commandLine.split(" ", 2)[0];
+        if (name.isEmpty()) return false;
+        try {
+            var req = patchbukkit.entity.DispatchServerCommandRequest.newBuilder().setCommand(commandLine);
+            if (sender instanceof org.bukkit.entity.Player p) {
+                req.setPlayer(org.patchbukkit.bridge.BridgeUtils.convertUuid(p.getUniqueId()));
+            } else if (!(sender instanceof org.bukkit.command.ConsoleCommandSender)) {
+                return false;
+            }
+            NativeBridgeFfi.dispatchServerCommand(req.build());
+            return true;
+        } catch (Throwable t) {
+            org.patchbukkit.bridge.BridgeUtils.logBridgeFailure("dispatchServerCommand", t);
+            return false;
+        }
     }
 
     @Override
