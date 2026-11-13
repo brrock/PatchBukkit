@@ -131,13 +131,9 @@ impl From<&CommandSender> for SimpleCommandSender {
     }
 }
 
-impl CommandExecutor for JavaCommandExecutor {
-    fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
-        if let CommandSender::Player(player) = &context.source.output {
-            crate::java::native_callbacks::utils::cache_player(player.clone());
-        }
-
-        let full_command = match context.get_argument::<String>(ARG_ANY) {
+impl JavaCommandExecutor {
+    fn fallback_command_line(&self, context: &CommandContext) -> String {
+        match context.get_argument::<String>(ARG_ANY) {
             Ok(msg) => {
                 if self.cmd_name.starts_with('/') {
                     format!("{} {}", self.cmd_name, msg)
@@ -152,6 +148,26 @@ impl CommandExecutor for JavaCommandExecutor {
                     format!("/{}", self.cmd_name)
                 }
             }
+        }
+    }
+}
+
+impl CommandExecutor for JavaCommandExecutor {
+    fn execute(&self, context: &CommandContext) -> CommandExecutorResult {
+        if let CommandSender::Player(player) = &context.source.output {
+            crate::java::native_callbacks::utils::cache_player(player.clone());
+        }
+
+        // Forward the line as typed: Bukkit commands may be named "size" and "/size" (WorldEdit
+        // typed as "/size" and "//size"), and the Java command map tells them apart by label.
+        // The whole input is the typed line. The first parsed node is not always the label (for a
+        // command that takes arguments the label node may not be recorded), so slicing from it
+        // drops the label.
+        let typed = Some(context.input.trim()).filter(|line| !line.is_empty());
+        let full_command = if let Some(line) = typed {
+            line.to_string()
+        } else {
+            self.fallback_command_line(context)
         };
 
         let command_sender: SimpleCommandSender = (&context.source.output).into();

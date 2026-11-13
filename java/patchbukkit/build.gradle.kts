@@ -44,7 +44,19 @@ repositories {
         name = "papermc"
         url = uri("https://repo.papermc.io/repository/maven-public/")
     }
+    maven {
+        name = "enginehub"
+        url = uri("https://maven.enginehub.org/repo/")
+    }
 }
+
+// Compat classes compiled against a plugin's API (e.g. WorldEdit). They ship inside
+// patchbukkit.jar but are defined in the plugin's own classloader at runtime, so the
+// plugin API itself must not be bundled: it stays off the main compileClasspath.
+val worldedit: SourceSet by sourceSets.creating {
+    compileClasspath += sourceSets.main.get().output + sourceSets.main.get().compileClasspath
+}
+val worldeditCompileOnly: Configuration by configurations.getting
 
 dependencies {
     paperweight.paperDevBundle("26.3.build.8-alpha")
@@ -64,6 +76,16 @@ dependencies {
     implementation("commons-lang:commons-lang:2.6")
     implementation("org.xerial:sqlite-jdbc:3.47.1.0")
     implementation("com.mysql:mysql-connector-j:9.1.0")
+    worldeditCompileOnly("com.sk89q.worldedit:worldedit-bukkit:7.4.5") {
+        isTransitive = false
+    }
+    worldeditCompileOnly("com.sk89q.worldedit:worldedit-core:7.4.5") {
+        isTransitive = false
+    }
+    worldeditCompileOnly("com.sk89q.worldedit.worldedit-libs:core:7.4.5") {
+        isTransitive = false
+    }
+    worldeditCompileOnly("org.enginehub.lin-bus:lin-bus-tree:0.2.0")
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
@@ -91,6 +113,8 @@ tasks.named<Jar>("jar") {
     isZip64 = true
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn(configurations.compileClasspath)
+
+    from(worldedit.output)
 
     from({
         configurations.compileClasspath.get().map { file ->

@@ -10,4 +10,6 @@ option java_package = "patchbukkit.message";
 message SendMessageRequest {
   patchbukkit.common.UUID uuid = 1;
   string message = 2;
+  // When set, message is a JSON text component instead of legacy section-sign text.
+  bool json = 3;
 }

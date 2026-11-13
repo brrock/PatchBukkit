@@ -28,6 +28,7 @@ import java.util.Date;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -164,8 +165,14 @@ public class PatchBukkitServer implements Server {
     private static final Logger logger = Logger.getLogger("Minecraft");
     private static volatile PatchBukkitServer INSTANCE;
 
+    /** WorldEdit's own adapters need CraftBukkit internals; this one runs on PatchBukkit's API. */
+    private static final String WORLDEDIT_ADAPTER = "org.patchbukkit.compat.worldedit.PatchBukkitWorldEditAdapter";
+
     public PatchBukkitServer() {
         INSTANCE = this;
+        if (System.getProperty("worldedit.bukkit.adapter") == null) {
+            System.setProperty("worldedit.bukkit.adapter", WORLDEDIT_ADAPTER);
+        }
         try {
             this.serverName = io.papermc.paper.ServerBuildInfo.buildInfo().brandName();
         } catch (Throwable ignored) {}
@@ -1297,6 +1304,7 @@ public class PatchBukkitServer implements Server {
 
     @Override
     public @NotNull List<World> getWorlds() {
+        if (worldsHidden) return List.of();
         var response = NativeBridgeFfi.getWorlds(EmptyRequest.getDefaultInstance());
         if (response == null) return List.of();
         List<World> list = new ArrayList<>();
@@ -2252,7 +2260,21 @@ public class PatchBukkitServer implements Server {
         return PatchBukkitBlockData.newData(material, type, data);
     }
 
+    private static volatile boolean worldsHidden;
+
+    /**
+     * While set, {@link #getWorlds()} reports no worlds. Used while enabling {@code load: STARTUP}
+     * plugins, which Bukkit enables before any world is loaded.
+     */
+    public static void setWorldsHidden(boolean hidden) {
+        worldsHidden = hidden;
+    }
+
+    /** Tags handed out so far, per Bukkit tag registry ("blocks", "items", ...), in creation order. */
+    private final Map<String, Map<NamespacedKey, Tag<?>>> tagsByRegistry = new ConcurrentHashMap<>();
+
     @Override
+    @SuppressWarnings("unchecked")
     public <T extends Keyed> @Nullable Tag<T> getTag(
         @NotNull String registry,
         @NotNull NamespacedKey tag,
@@ -2265,6 +2287,7 @@ public class PatchBukkitServer implements Server {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public <T extends Keyed> @NotNull Iterable<Tag<T>> getTags(
         @NotNull String registry,
         @NotNull Class<T> clazz

@@ -49,6 +49,9 @@ pub use custom_inventory::*;
 pub use sign::*;
 pub use world::*;
 
+pub mod blocks;
+pub use blocks::*;
+
 pub mod itemstack;
 pub use itemstack::*;
 

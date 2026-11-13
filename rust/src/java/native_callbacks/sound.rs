@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use pumpkin::entity::EntityBase;
 use pumpkin_data::sound::{Sound, SoundCategory};
 use pumpkin_protocol::{IdOr, java::client::play::CEntitySoundEffect};
 use pumpkin_util::math::vector3::Vector3;
@@ -31,7 +34,13 @@ pub fn ffi_native_bridge_player_entity_play_sound_impl(
             .worlds
             .load()
             .iter()
-            .find_map(|world| world.get_entity_by_uuid(entity_uuid))?;
+            .find_map(|world| {
+                // Players live in the world's player list, not its entity list.
+                world
+                    .get_player_by_uuid(entity_uuid)
+                    .map(|player| player as Arc<dyn EntityBase>)
+                    .or_else(|| world.get_entity_by_uuid(entity_uuid))
+            })?;
 
         let entity = entity.get_entity();
 

@@ -27,7 +27,9 @@ import org.jspecify.annotations.NonNull;
 import org.patchbukkit.bridge.BridgeUtils;
 import org.patchbukkit.entity.PatchBukkitEntity;
 import patchbukkit.bridge.NativeBridgeFfi;
+import patchbukkit.world.GetBiomesRequest;
 import patchbukkit.world.GetBlockDataRequest;
+import patchbukkit.world.SetBiomesRequest;
 import patchbukkit.world.SetBlockDataRequest;
 import patchbukkit.world.SpawnWorldEntityRequest;
 
@@ -36,6 +38,21 @@ public class PatchBukkitRegionAccessor implements RegionAccessor {
 
     @Override
     public @NotNull Biome getBiome(int x, int y, int z) {
+        if (this instanceof PatchBukkitWorld world) {
+            try {
+                var response = NativeBridgeFfi.getBiomes(GetBiomesRequest.newBuilder()
+                    .setWorldUuid(BridgeUtils.convertUuid(world.getUID()))
+                    .addPositions(BlockPositions.pack(x, y, z))
+                    .build());
+                if (response != null && response.getBiomesCount() == 1) {
+                    NamespacedKey key = NamespacedKey.fromString(response.getBiomes(0));
+                    Biome biome = key != null ? Registry.BIOME.get(key) : null;
+                    if (biome != null) {
+                        return biome;
+                    }
+                }
+            } catch (Throwable ignored) {}
+        }
         return Biome.PLAINS;
     }
 
@@ -46,6 +63,13 @@ public class PatchBukkitRegionAccessor implements RegionAccessor {
 
     @Override
     public void setBiome(int x, int y, int z, @NotNull Biome biome) {
+        if (this instanceof PatchBukkitWorld world) {
+            NativeBridgeFfi.setBiomes(SetBiomesRequest.newBuilder()
+                .setWorldUuid(BridgeUtils.convertUuid(world.getUID()))
+                .addPositions(BlockPositions.pack(x, y, z))
+                .addBiomes(biome.getKey().toString())
+                .build());
+        }
     }
 
     @Override
